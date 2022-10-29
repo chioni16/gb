@@ -46,14 +46,14 @@ pub(crate) struct Flags {
 #[derive(Deserialize, Debug, Clone)]
 pub(crate) struct Instruction {
     pub mnemonic: String, 
-    pub bytes: u8,
+    pub length: u8,
     pub cycles: Vec<u8>,
-    pub operands: Vec<Operand>,
-    pub immediate: bool, 
-    // pub group: String,
+    // pub operands: Vec<Operand>,
+    // pub immediate: bool, 
+    pub group: String,
     pub flags: Flags,
-    // pub operand1: Option<String>,
-    // pub operand2: Option<String>,
+    pub operand1: Option<String>,
+    pub operand2: Option<String>,
 }
 
 pub(crate) type Opcode = u16;

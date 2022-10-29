@@ -1,64 +1,14 @@
 use std::ops::{Add, AddAssign};
 
+mod flags;
 mod instruction;
 mod mmu;
+mod registers;
 
+use flags::Flags;
 use instruction::decode;
 use mmu::MMU;
-
-#[allow(dead_code)]
-struct Registers {
-    a: u8,
-    f: u8,
-    b: u8,
-    c: u8,
-    d: u8,
-    e: u8,
-    h: u8,
-    l: u8,
-}
-
-impl Registers {
-    fn new() -> Self {
-        Self { 
-            a: 0,
-            f: 0,
-            b: 0,
-            c: 0,
-            d: 0,
-            e: 0,
-            h: 0,
-            l: 0,
-        }
-    }
-}
-
-
-struct Flags {
-
-}
-
-#[allow(dead_code)]
-impl Flags {
-    fn new() -> Self {
-        Self {  }
-    }
-    fn set() {}
-    fn unset() {}
-    fn toggle() {}
-}
-
-// impl From<u8> for Flags {
-//     fn from(value: u8) -> Self {
-        
-//     }
-// }
-
-// impl From<Flags> for u8 {
-//     fn from(value: Flags) -> Self {
-        
-//     }
-// }
+use registers::Registers;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 struct Addr(u16);
@@ -122,7 +72,16 @@ impl CPU {
         print!("{:#x?}\t", opcode);
         decode(opcode, self).unwrap();
     }
-    
+
+    // stack
+    pub fn push(&mut self, v: u16) {
+        self.mmu.writeu16(self.sp, v);
+    }
+
+    pub fn set_sp(&mut self, v: u16) {
+        self.sp = v.into();
+    }
+
     // mmu
     pub fn readu8(&mut self) -> u8 {
         let ret = self.mmu.readu8(self.pc);

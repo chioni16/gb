@@ -1,3 +1,5 @@
+#![feature(bigint_helper_methods)]
+
 mod cpu;
 
 use std::{path::Path, fs, io::Read};
