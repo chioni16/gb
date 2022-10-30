@@ -1,6 +1,7 @@
 use super::{CPU, Addr};
 
 pub(super) fn decode(opcode: u16, cpu: &mut CPU) -> Result<u8, u16>{
+    // println!("{:#x}", opcode);
     match opcode {
         0x0000 => {/*NOP*/}
         0x0010 => {/*STOP*/}
@@ -118,14 +119,90 @@ pub(super) fn decode(opcode: u16, cpu: &mut CPU) -> Result<u8, u16>{
             // Conditonal Jump
             // Flags: - - - -
             let condition = Condition::try_from(get_r(opcode as u8)).unwrap();
+            let jmp = cpu.readu8() as i8;
             if check_condition(cpu, condition) {
-                let jmp = cpu.readu8() as i8;
                 let cur_pc: u16 = cpu.pc.into();
                 let next_pc = cur_pc.wrapping_add_signed(jmp as i16);
                 cpu.pc = next_pc.into();
             }
         }
 
+        0x00cd => {
+            // Unconditional Call
+            // Flags: - - - -
+            let next_pc = cpu.readu16();
+            cpu.push_stack(cpu.pc.into());
+            cpu.pc = next_pc.into();
+        }
+
+        0x00c4 | 0x00d4 | 0x00cc | 0x00dc => {
+            // Conditional Call
+            // Flags: - - - -
+            let condition = Condition::try_from(get_r(opcode as u8)).unwrap();
+            let next_pc = cpu.readu16();
+            if check_condition(cpu, condition) {
+                cpu.push_stack(cpu.pc.into());
+                cpu.pc = next_pc.into();
+            }
+        }
+
+        0x00c9 => {
+            // Unconditional Return
+            // Flags: - - - -
+            let ret_pc = cpu.pop_stack();
+            cpu.pc = ret_pc.into();
+        }
+
+        0x00c0 | 0x00d0 | 0x00c8 | 0x00d8 => {
+            // Conditional Return
+            // Flags: - - - -
+            let condition = Condition::try_from(get_r(opcode as u8)).unwrap();
+            if check_condition(cpu, condition) {
+                let ret_pc = cpu.pop_stack();
+                cpu.pc = ret_pc.into();
+            }
+        }
+
+        // load from A
+        // Flags: - - - -
+        0x00e0 => {
+            let value = cpu.regs.get_a();
+            let addr = (0xff00 + cpu.readu8() as u16).into();
+            cpu.mmu.writeu8(addr, value);
+        }
+        0x00e2 => {
+            let value = cpu.regs.get_a();
+            let addr = (0xff00 + cpu.regs.get_c() as u16).into();
+            cpu.mmu.writeu8(addr, value);
+        }
+        0x00ea => {
+            let value = cpu.regs.get_a();
+            let addr = cpu.readu16().into();
+            cpu.mmu.writeu8(addr, value);
+        }
+
+        // load to A
+        // Flags: - - - -
+        0x00f0 => {
+            let addr = (0xff00 + cpu.readu8() as u16).into();
+            let value = cpu.mmu.readu8(addr);
+            cpu.regs.set_a(value);
+        }
+        0x00f2 => {
+            let addr = (0xff00 + cpu.regs.get_c() as u16).into();
+            let value = cpu.mmu.readu8(addr);
+            cpu.regs.set_a(value);
+        }
+        0x00fa => {
+            let addr = cpu.readu16().into();
+            let value = cpu.mmu.readu8(addr);
+            cpu.regs.set_a(value);
+        }
+
+        0x0007 | 0x0017 | 0x0027 | 0x0037 | 0x000f | 0x001f | 0x002f | 0x003f => {
+            let operation = AccFlagOp::try_from(get_y(opcode as u8)).unwrap();
+            perform_acc_flag(cpu, operation);
+        }
 
         // cbprefixed
 
@@ -314,7 +391,11 @@ fn get_addr_from_r16_group2(cpu: &mut CPU, opcode: u8) -> Addr {
     let reg = R16G2::try_from(get_p(opcode)).unwrap();
     let addr = match reg {
         R16G2::BC => cpu.regs.get_bc(),
-        R16G2::DE => cpu.regs.get_de(),
+        R16G2::DE => {
+            let v = cpu.regs.get_de();
+            // println!("yolo {:#x}", v);
+            v
+        }
         R16G2::HLI => {
             let addr = cpu.regs.get_hl();
             cpu.regs.incr_hl();
@@ -336,7 +417,9 @@ fn write_to_r16_group2(cpu: &mut CPU, opcode: u8, value: u8) {
 
 fn read_from_r16_group2(cpu: &mut CPU, opcode: u8) -> u8 {
     let addr = get_addr_from_r16_group2(cpu, opcode);
-    cpu.mmu.readu8(addr)
+    let val = cpu.mmu.readu8(addr);
+    // println!("yolo2 {:#x}", val);
+    val
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -568,6 +651,50 @@ fn check_condition(cpu: &CPU, conditon: Condition) -> bool {
         Condition::Z  => cpu.regs.f.zero,
         Condition::NC => !cpu.regs.f.carry,
         Condition::C  => cpu.regs.f.carry,
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[repr(u8)]
+enum AccFlagOp {
+    RLCA = 0,
+    RRCA = 1,
+    RLA  = 2,
+    RRA  = 3,
+    DAA  = 4,
+    CPL  = 5,
+    SCF  = 6, 
+    CCF  = 7,
+}
+
+impl TryFrom<u8> for AccFlagOp {
+    type Error = ();
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        let r = match value {
+            0 => AccFlagOp::RLCA, 
+            1 => AccFlagOp::RRCA, 
+            2 => AccFlagOp::RLA,
+            3 => AccFlagOp::RRA,
+            4 => AccFlagOp::DAA,
+            5 => AccFlagOp::CPL,
+            6 => AccFlagOp::SCF,
+            7 => AccFlagOp::CCF,
+            _ => return Err(()),
+        };
+        Ok(r)
+    }
+}
+
+fn perform_acc_flag(cpu: &mut CPU, operation: AccFlagOp) {
+    match operation {
+        AccFlagOp::RLA => {
+            let value = cpu.regs.get_a();
+            let new_value = nth_bit_to(value << 1, 0, cpu.regs.f.carry);
+            cpu.regs.set_a(new_value);
+            cpu.regs.f.zero = new_value == 0;
+            cpu.regs.f.carry = get_nth_bit(value, 7);
+        }
+        _ => unimplemented!()
     }
 }
 

@@ -19,7 +19,8 @@ pub(crate) trait BusIO: Debug {
 struct ROM(Vec<u8>);
 
 impl ROM { 
-    fn new(rom: Vec<u8>) -> Self {
+    fn new(mut rom: Vec<u8>) -> Self {
+        rom.resize(32*1024, 0);
         Self(rom)
     }
 }
@@ -190,22 +191,18 @@ impl MMU {
     // probably proc macros
     pub(crate) fn readu16(&self, addr: Addr) -> u16 {
         let region = self.find_region(addr).unwrap();
-        println!("r16: {:#x?}", region.start);
         region.readu16(addr).unwrap()
     }
     pub(crate) fn readu8(&self, addr: Addr) -> u8 {
         let region = self.find_region(addr).unwrap();
-        println!("r8: {:#x?}", region.start);
         region.readu8(addr).unwrap()
     }
     pub(crate) fn writeu16(&mut self, addr: Addr, value: u16) {
         let region = self.find_region_mut(addr).unwrap();
-        println!("w16: {:#x?}", region.start);
         region.writeu16(addr, value).unwrap()
     }
     pub(crate) fn writeu8(&mut self, addr: Addr, value: u8) {
         let region = self.find_region_mut(addr).unwrap();
-        println!("w8: {:#x?}", region.start);
         region.writeu8(addr, value).unwrap()
     }
 

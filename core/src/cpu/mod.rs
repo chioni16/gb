@@ -6,7 +6,7 @@ mod registers;
 
 use instruction::decode;
 use mmu::MMU;
-use registers::Registers;
+use registers::{Registers, Flags};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub (crate) struct Addr(u16);
@@ -76,12 +76,12 @@ impl CPU {
     }
    
     pub(crate) fn step(&mut self) {
-        print!("{:#x?}\t", self.pc.0);
+        println!("A: {:0>2X} F: {:0>2X} B: {:0>2X} C: {:0>2X} D: {:0>2X} E: {:0>2X} H: {:0>2X} L: {:0>2X} SP: {:0>4X} PC: 00:{:0>4X} ({:0>2X} {:0>2X} {:0>2X} {:0>2X})", self.regs.a, <Flags as Into<u8>>::into(self.regs.f), self.regs.b, self.regs.c, self.regs.d, self.regs.e, self.regs.h, self.regs.l, self.sp.0, self.pc.0, self.mmu.readu8(self.pc),self.mmu.readu8(self.pc+1.into()),self.mmu.readu8(self.pc+2.into()),self.mmu.readu8(self.pc+3.into()));
         let mut opcode = self.readu8() as u16;
         if opcode == 0xcb {
             opcode = opcode << 8 | self.readu8() as u16;
         }
-        print!("{:#x?}\t", opcode);
+        // println!("{:#x?}\t", opcode);
         decode(opcode, self).unwrap();
     }
 
@@ -90,8 +90,8 @@ impl CPU {
         // TODO 
         // invariance? sp pointing to the location where next piece of information
         // can be written? 
-        self.mmu.writeu16(self.sp, v);
         self.sp -= 2.into();
+        self.mmu.writeu16(self.sp, v);
     }
     pub fn pop_stack(&mut self) -> u16 {
         let v = self.mmu.readu16(self.sp);

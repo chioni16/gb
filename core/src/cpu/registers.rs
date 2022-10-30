@@ -87,41 +87,41 @@ impl Registers {
         self.l
     }
     pub fn get_bc(&self) -> u16 {
-        (self.b as u16) << 8 | self.c as u16
+        ((self.b as u16) << 8) | self.c as u16
     }
     pub fn get_de(&self) -> u16 {
-        (self.d as u16) << 8 | self.e as u16
+        ((self.d as u16) << 8) | self.e as u16
     }
     pub fn get_hl(&self) -> u16 {
-        (self.h as u16) << 8 | self.l as u16
+        ((self.h as u16) << 8) | self.l as u16
     }
     pub fn get_af(&self) -> u16 {
-        (self.a as u16) << 8 | self.get_f() as u16
+        ((self.a as u16) << 8) | self.get_f() as u16
     }
 
     pub fn set_a(&mut self, v: u8) {
         self.a = v;
     }
     pub fn set_b(&mut self, v: u8) {
-        self.a = v;
+        self.b = v;
     }
     pub fn set_c(&mut self, v: u8) {
-        self.a = v;
+        self.c = v;
     }
     pub fn set_d(&mut self, v: u8) {
-        self.a = v;
+        self.d = v;
     }
     pub fn set_e(&mut self, v: u8) {
-        self.a = v;
+        self.e = v;
     }
     pub fn set_f(&mut self, v: u8) {
-        self.a = v.into();
+        self.f = v.into();
     }
     pub fn set_h(&mut self, v: u8) {
-        self.a = v;
+        self.h = v;
     }
     pub fn set_l(&mut self, v: u8) {
-        self.a = v;
+        self.l = v;
     }
     pub fn set_bc(&mut self, v: u16) {
         self.c = lsb(v);
