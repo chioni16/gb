@@ -7,12 +7,27 @@ pub(super) fn decode(opcode: u16, cpu: &mut CPU) -> Result<u8, u16>{
         0x0076 => {/*HALT*/}
         0x00f3 => {/*DI*/}
         0x00fb => {/*EI*/}
-        0x0001 => {
-            let v = cpu.readu16();
-            cpu.regs.set_bc(v);
+        0x0001 | 0x0011 | 0x0021 | 0x0031 => {
+            // LD R16G1 [u16]
+            // Flags: - - - -
+            let val = cpu.readu16();
+            let dst = R16G1::try_from(get_p(opcode as u8)).unwrap();
+            write_to_r16_group1(cpu, dst, val);
         }
-        0x0002 | 0x0012 | 0x0022 | 0x0032 => write_to_r16_group2(cpu, opcode as u8, cpu.regs.get_a()),
+        0x0002 | 0x0012 | 0x0022 | 0x0032 => {
+            // LD [R16G2] A
+            // Flags: - - - -
+            write_to_r16_group2(cpu, opcode as u8, cpu.regs.get_a());
+        }
+        0x0003 | 0x0013 | 0x0023 | 0x0033 => {
+            // INC R16G1
+            // Flags: - - - - 
+            let reg = R16G1::try_from(get_p(opcode as u8)).unwrap();
+            let val = read_from_r16_group1(cpu, reg);
+            write_to_r16_group1(cpu, reg, val+1);
+        }
         0x0004 | 0x0014 | 0x0024 | 0x0034 | 0x000c | 0x001c | 0x002c | 0x003c => {
+            // INC r8
             // Flags: Z 0 H -
             let target = R8::try_from(get_y(opcode as u8)).unwrap();
             let v = read_from_r8(cpu, target) + 1;
@@ -22,6 +37,7 @@ pub(super) fn decode(opcode: u16, cpu: &mut CPU) -> Result<u8, u16>{
             cpu.flags.half_carry = bit_3_overflow(v, 1);
         }
         0x0005 | 0x0015 | 0x0025 | 0x0035 | 0x000d | 0x001d | 0x002d | 0x003d => {
+            // DEC r8
             // Flags: Z 1 H -
             let target = R8::try_from(get_y(opcode as u8)).unwrap();
             let v = read_from_r8(cpu, target) - 1;
@@ -31,30 +47,33 @@ pub(super) fn decode(opcode: u16, cpu: &mut CPU) -> Result<u8, u16>{
             cpu.flags.half_carry = bit_4_borrow(v, 1);
         }
         0x0006 | 0x0016 | 0x0026 | 0x0036 | 0x000e | 0x001e | 0x002e | 0x003e => {
+            // LD r8 [u8]
+            // Flags: - - - -
             let v = cpu.readu8();
             let dst = R8::try_from(get_y(opcode as u8)).unwrap();
             write_to_r8(cpu, dst, v);
         }
+        0x0009 | 0x0019 | 0x0029 | 0x0039 => {
+            // ADD HL R16G1
+            // Flags: - - - - 
+            let dst = R16G1::HL;
+            let src = R16G1::try_from(get_p(opcode as u8)).unwrap();
+            let val = read_from_r16_group1(cpu, src) + read_from_r16_group1(cpu, dst);
+            write_to_r16_group1(cpu, dst, val);
+        }
         0x000a | 0x001a | 0x002a | 0x003a => {
+            // LD A [R16G2]
+            // Flags: - - - -
             let v = read_from_r16_group2(cpu, opcode as u8);
             cpu.regs.set_a(v);
         }
-       
-        0x0011 => {
-            let v = cpu.readu16();
-            cpu.regs.set_de(v);
+        0x000b | 0x001b | 0x002b | 0x003b => {
+            // DEC R16G1
+            // Flags: - - - - 
+            let reg = R16G1::try_from(get_p(opcode as u8)).unwrap();
+            let val = read_from_r16_group1(cpu, reg);
+            write_to_r16_group1(cpu, reg, val-1);
         }
-        
-        0x0021 => {
-            let v = cpu.readu16();
-            cpu.regs.set_hl(v);
-        }
-        
-        0x0031 => {
-            let v = cpu.readu16();
-            cpu.push(v);
-        }
-        
         0x0040..=0x0075 | 0x0077..=0x007f => {
             // Flags: - - - - 
             r8_to_r8(cpu, opcode as u8);
@@ -196,6 +215,28 @@ fn r8_to_r8(cpu: &mut CPU, opcode: u8) {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(u8)]
+enum R16G1 {
+    BC = 0,
+    DE = 1,
+    HL = 2,
+    SP = 3,
+}
+
+impl TryFrom<u8> for R16G1 {
+    type Error = ();
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        let r = match value {
+            0 => R16G1::BC,
+            1 => R16G1::DE,
+            2 => R16G1::HL,
+            3 => R16G1::SP,
+            _ => return Err(()),
+        };
+        Ok(r)
+    }
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[repr(u8)]
 enum R16G2 {
     BC = 0,
     DE = 1,
@@ -214,6 +255,24 @@ impl TryFrom<u8> for R16G2 {
             _ => return Err(()),
         };
         Ok(r)
+    }
+}
+
+fn read_from_r16_group1(cpu: &mut CPU, reg: R16G1) -> u16 {
+    match reg {
+        R16G1::BC => cpu.regs.get_bc(),
+        R16G1::DE => cpu.regs.get_de(),
+        R16G1::HL => cpu.regs.get_hl(),
+        R16G1::SP => cpu.sp.into(),
+    }
+}
+
+fn write_to_r16_group1(cpu: &mut CPU, reg: R16G1, val: u16) {
+    match reg {
+        R16G1::BC => cpu.regs.set_bc(val),
+        R16G1::DE => cpu.regs.set_de(val),
+        R16G1::HL => cpu.regs.set_hl(val),
+        R16G1::SP => cpu.sp = val.into(),
     }
 }
 
