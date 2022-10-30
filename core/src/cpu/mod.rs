@@ -1,17 +1,15 @@
-use std::ops::{Add, AddAssign};
+use std::{ops::{Add, AddAssign, Sub, SubAssign}, fmt::Display};
 
-mod flags;
 mod instruction;
 mod mmu;
 mod registers;
 
-use flags::Flags;
 use instruction::decode;
 use mmu::MMU;
 use registers::Registers;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-struct Addr(u16);
+pub (crate) struct Addr(u16);
 impl Addr {
     fn new() -> Self {
         Self(0)
@@ -25,9 +23,21 @@ impl Add for Addr {
     }
 }
 
+impl Sub for Addr {
+    type Output = Addr;
+    fn sub(self, rhs: Self) -> Self::Output {
+        Addr(self.0 - rhs.0)
+    }
+}
+
 impl AddAssign for Addr {
     fn add_assign(&mut self, rhs: Self) {
         self.0 += rhs.0;
+    }
+}
+impl SubAssign for Addr {
+    fn sub_assign(&mut self, rhs: Self) {
+        self.0 -= rhs.0;        
     }
 }
 impl From<u16> for Addr {
@@ -42,22 +52,24 @@ impl From<Addr> for u16 {
     }
 }
 
-#[allow(dead_code)]
+impl Display for Addr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "{}", self.0)
+    }
+}
+
 pub(crate) struct CPU {
     mmu: MMU,
     regs: Registers, 
-    flags: Flags, 
     pc: Addr,
     sp: Addr,
 }
 
-#[allow(dead_code)]
 impl CPU {
     pub fn new(rom: Vec<u8>) -> Self {
         Self {
             mmu: MMU::new(rom), 
             regs: Registers::new(),
-            flags: Flags::new(),
             pc: Addr::new(),
             sp: Addr::new(),
         }
@@ -74,8 +86,17 @@ impl CPU {
     }
 
     // stack
-    pub fn push(&mut self, v: u16) {
+    pub fn push_stack(&mut self, v: u16) {
+        // TODO 
+        // invariance? sp pointing to the location where next piece of information
+        // can be written? 
         self.mmu.writeu16(self.sp, v);
+        self.sp -= 2.into();
+    }
+    pub fn pop_stack(&mut self) -> u16 {
+        let v = self.mmu.readu16(self.sp);
+        self.sp += 2.into();
+        v
     }
 
     pub fn set_sp(&mut self, v: u16) {

@@ -32,9 +32,9 @@ pub(super) fn decode(opcode: u16, cpu: &mut CPU) -> Result<u8, u16>{
             let target = R8::try_from(get_y(opcode as u8)).unwrap();
             let v = read_from_r8(cpu, target) + 1;
             write_to_r8(cpu, target, v);
-            cpu.flags.zero =  v == 0;
-            cpu.flags.subtraction = false;
-            cpu.flags.half_carry = bit_3_overflow(v, 1);
+            cpu.regs.f.zero =  v == 0;
+            cpu.regs.f.subtraction = false;
+            cpu.regs.f.half_carry = bit_3_overflow(v, 1);
         }
         0x0005 | 0x0015 | 0x0025 | 0x0035 | 0x000d | 0x001d | 0x002d | 0x003d => {
             // DEC r8
@@ -42,9 +42,9 @@ pub(super) fn decode(opcode: u16, cpu: &mut CPU) -> Result<u8, u16>{
             let target = R8::try_from(get_y(opcode as u8)).unwrap();
             let v = read_from_r8(cpu, target) - 1;
             write_to_r8(cpu, target, v);
-            cpu.flags.zero = v == 0;
-            cpu.flags.subtraction = true;
-            cpu.flags.half_carry = bit_4_borrow(v, 1);
+            cpu.regs.f.zero = v == 0;
+            cpu.regs.f.subtraction = true;
+            cpu.regs.f.half_carry = bit_4_borrow(v, 1);
         }
         0x0006 | 0x0016 | 0x0026 | 0x0036 | 0x000e | 0x001e | 0x002e | 0x003e => {
             // LD r8 [u8]
@@ -85,11 +85,45 @@ pub(super) fn decode(opcode: u16, cpu: &mut CPU) -> Result<u8, u16>{
             let operation = AluOp::try_from(get_y(opcode as u8)).unwrap();
             perform_alu8(cpu, operation, op2);
         }
+        0x00c1 | 0x00d1 | 0x00e1 | 0x00f1 => {
+            // POP r16g3
+            // Flags: - - - - (except POP AF, but no explicit changes done to flags)
+            let val = cpu.pop_stack();
+            let dst = R16G3::try_from(get_p(opcode as u8)).unwrap();
+            write_to_r16_group3(cpu, dst, val)
+        }
+        0x00c5 | 0x00d5 | 0x00e5 | 0x00f5 => {
+            // PUSH r16g3
+            // Flags: - - - - 
+            let src = R16G3::try_from(get_p(opcode as u8)).unwrap();
+            let val = read_from_r16_group3(cpu, src);
+            cpu.push_stack(val);
+        }
         0x00c6 | 0x00d6 | 0x00e6 | 0x00f6 | 0x00ce | 0x00de | 0x00ee | 0x00fe => {
             // Flags: perform_alu8
             let op2 = cpu.readu8();
             let operation = AluOp::try_from(get_y(opcode as u8)).unwrap();
             perform_alu8(cpu, operation, op2);
+        }
+        0x0018 => {
+            // Unconditional Jump
+            // Flags: - - - -
+            let jmp = cpu.readu8() as i8;
+            let cur_pc: u16 = cpu.pc.into();
+            let next_pc = cur_pc.wrapping_add_signed(jmp as i16);
+            cpu.pc = next_pc.into();
+        }
+
+        0x0020 | 0x0030 | 0x0028 | 0x0038 => {
+            // Conditonal Jump
+            // Flags: - - - -
+            let condition = Condition::try_from(get_r(opcode as u8)).unwrap();
+            if check_condition(cpu, condition) {
+                let jmp = cpu.readu8() as i8;
+                let cur_pc: u16 = cpu.pc.into();
+                let next_pc = cur_pc.wrapping_add_signed(jmp as i16);
+                cpu.pc = next_pc.into();
+            }
         }
 
 
@@ -104,10 +138,10 @@ pub(super) fn decode(opcode: u16, cpu: &mut CPU) -> Result<u8, u16>{
             let operation = SrOp::try_from(get_y(opcode as u8)).unwrap();
             let (res, carry) = perform_sr8(cpu, operation, res);
             write_to_r8(cpu, target, res); 
-            cpu.flags.zero = res == 0;
-            cpu.flags.subtraction = false;
-            cpu.flags.half_carry = false;
-            cpu.flags.carry = carry;
+            cpu.regs.f.zero = res == 0;
+            cpu.regs.f.subtraction = false;
+            cpu.regs.f.half_carry = false;
+            cpu.regs.f.carry = carry;
         }
 
         0xcb40..=0xcb7f => {
@@ -118,9 +152,9 @@ pub(super) fn decode(opcode: u16, cpu: &mut CPU) -> Result<u8, u16>{
             let res = read_from_r8(cpu, src);
             let bit = get_y(opcode as u8);
             let res = get_nth_bit(res, bit);
-            cpu.flags.zero = !res;
-            cpu.flags.subtraction = false;
-            cpu.flags.half_carry = true;
+            cpu.regs.f.zero = !res;
+            cpu.regs.f.subtraction = false;
+            cpu.regs.f.half_carry = true;
         }
         
         0xcb80..=0xcbbf => {
@@ -143,7 +177,7 @@ pub(super) fn decode(opcode: u16, cpu: &mut CPU) -> Result<u8, u16>{
             let res = set_nth_bit(res, bit);
             write_to_r8(cpu, target, res);
         }
-        _ => unimplemented!()
+        _ => panic!("Unimplemented opcode: {:#x}", opcode),
     };
     Ok(0)
 }
@@ -307,6 +341,47 @@ fn read_from_r16_group2(cpu: &mut CPU, opcode: u8) -> u8 {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(u8)]
+enum R16G3 {
+    BC = 0,
+    DE = 1,
+    HL = 2,
+    AF = 3,
+}
+
+impl TryFrom<u8> for R16G3 {
+    type Error = ();
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        let r = match value {
+            0 => R16G3::BC,
+            1 => R16G3::DE,
+            2 => R16G3::HL,
+            3 => R16G3::AF,
+            _ => return Err(()),
+        };
+        Ok(r)
+    }
+}
+
+fn read_from_r16_group3(cpu: &mut CPU, reg: R16G3) -> u16 {
+    match reg {
+        R16G3::BC => cpu.regs.get_bc(),
+        R16G3::DE => cpu.regs.get_de(),
+        R16G3::HL => cpu.regs.get_hl(),
+        R16G3::AF => cpu.regs.get_af(),
+    }
+}
+
+fn write_to_r16_group3(cpu: &mut CPU, reg: R16G3, val: u16) {
+    match reg {
+        R16G3::BC => cpu.regs.set_bc(val),
+        R16G3::DE => cpu.regs.set_de(val),
+        R16G3::HL => cpu.regs.set_hl(val),
+        R16G3::AF => cpu.regs.set_af(val),
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[repr(u8)]
 enum AluOp {
     ADD = 0,
     ADC = 1,
@@ -342,73 +417,73 @@ fn perform_alu8(cpu: &mut CPU, operation: AluOp, op2: u8) {
         AluOp::ADD => {
             // Flags: Z 0 H C 
             let (res, of) = a.overflowing_add(op2);
-            cpu.flags.zero = res == 0;
-            cpu.flags.subtraction = false;
-            cpu.flags.half_carry = bit_3_overflow(a, op2);
-            cpu.flags.carry = of;
+            cpu.regs.f.zero = res == 0;
+            cpu.regs.f.subtraction = false;
+            cpu.regs.f.half_carry = bit_3_overflow(a, op2);
+            cpu.regs.f.carry = of;
             cpu.regs.set_a(res);
         }
         AluOp::ADC => {
             // Flags: Z 0 H C 
-            let (res, of) = a.carrying_add(op2, cpu.flags.carry);
-            cpu.flags.zero = res == 0;
-            cpu.flags.subtraction = false;
-            cpu.flags.half_carry = bit_3_overflow(a, op2);
-            cpu.flags.carry = of;
+            let (res, of) = a.carrying_add(op2, cpu.regs.f.carry);
+            cpu.regs.f.zero = res == 0;
+            cpu.regs.f.subtraction = false;
+            cpu.regs.f.half_carry = bit_3_overflow(a, op2);
+            cpu.regs.f.carry = of;
             cpu.regs.set_a(res);
         }
         AluOp::SUB => {
             // Flags: Z 1 H C 
             let (res, of) = a.overflowing_sub(op2);
-            cpu.flags.zero = res == 0;
-            cpu.flags.subtraction = true;
-            cpu.flags.half_carry = bit_4_borrow(a, op2);
-            cpu.flags.carry = of;
+            cpu.regs.f.zero = res == 0;
+            cpu.regs.f.subtraction = true;
+            cpu.regs.f.half_carry = bit_4_borrow(a, op2);
+            cpu.regs.f.carry = of;
             cpu.regs.set_a(res);
         }
         AluOp::SBC => {
             // Flags: Z 1 H C 
-            let (res, of) = a.borrowing_sub(op2, cpu.flags.carry);
-            cpu.flags.zero = res == 0;
-            cpu.flags.subtraction = true;
-            cpu.flags.half_carry = bit_4_borrow(a, op2);
-            cpu.flags.carry = of;
+            let (res, of) = a.borrowing_sub(op2, cpu.regs.f.carry);
+            cpu.regs.f.zero = res == 0;
+            cpu.regs.f.subtraction = true;
+            cpu.regs.f.half_carry = bit_4_borrow(a, op2);
+            cpu.regs.f.carry = of;
             cpu.regs.set_a(res);
         }
         AluOp::AND => {
             // Flags: Z 0 1 0 
             let res = a & op2;
-            cpu.flags.zero = res == 0;
-            cpu.flags.subtraction = false;
-            cpu.flags.half_carry = true;
-            cpu.flags.carry = false;
+            cpu.regs.f.zero = res == 0;
+            cpu.regs.f.subtraction = false;
+            cpu.regs.f.half_carry = true;
+            cpu.regs.f.carry = false;
             cpu.regs.set_a(res);
         }
         AluOp::XOR => {
             // Flags: Z 0 0 0 
             let res = a ^ op2;
-            cpu.flags.zero = res == 0;
-            cpu.flags.subtraction = false;
-            cpu.flags.half_carry = false;
-            cpu.flags.carry = false;
+            cpu.regs.f.zero = res == 0;
+            cpu.regs.f.subtraction = false;
+            cpu.regs.f.half_carry = false;
+            cpu.regs.f.carry = false;
             cpu.regs.set_a(res);
         }
         AluOp::OR => {
             // Flags: Z 0 0 0 
             let res = a | op2;
-            cpu.flags.zero = res == 0;
-            cpu.flags.subtraction = false;
-            cpu.flags.half_carry = false;
-            cpu.flags.carry = false;
+            cpu.regs.f.zero = res == 0;
+            cpu.regs.f.subtraction = false;
+            cpu.regs.f.half_carry = false;
+            cpu.regs.f.carry = false;
             cpu.regs.set_a(res);
         }
         AluOp::CP => {
             // Flags: Z 1 H C 
             let (res, of) = a.overflowing_sub(op2);
-            cpu.flags.zero = res == 0;
-            cpu.flags.subtraction = true;
-            cpu.flags.half_carry = bit_4_borrow(a, op2);
-            cpu.flags.carry = of;
+            cpu.regs.f.zero = res == 0;
+            cpu.regs.f.subtraction = true;
+            cpu.regs.f.half_carry = bit_4_borrow(a, op2);
+            cpu.regs.f.carry = of;
         }
     };
 }
@@ -450,9 +525,9 @@ fn perform_sr8(cpu: &mut CPU, operation: SrOp, value: u8) -> (u8, bool) {
         // Flags: Z 0 0 C
         SrOp::RRC  => (value.rotate_right(1), get_nth_bit(value, 0)),
         // Flags: Z 0 0 C
-        SrOp::RL   => (nth_bit_to(value << 1, 0, cpu.flags.carry), get_nth_bit(value, 7)),
+        SrOp::RL   => (nth_bit_to(value << 1, 0, cpu.regs.f.carry), get_nth_bit(value, 7)),
         // Flags: Z 0 0 C
-        SrOp::RR    => (nth_bit_to(value >> 1, 7, cpu.flags.carry), get_nth_bit(value, 0)),
+        SrOp::RR    => (nth_bit_to(value >> 1, 7, cpu.regs.f.carry), get_nth_bit(value, 0)),
         // Flags: Z 0 0 C
         SrOp::SLA  => (value << 1, get_nth_bit(value, 7)),
         // Flags: Z 0 0 C
@@ -461,6 +536,38 @@ fn perform_sr8(cpu: &mut CPU, operation: SrOp, value: u8) -> (u8, bool) {
         SrOp::SWAP => (swap_nibbles(value), false),
         // Flags: Z 0 0 C
         SrOp::SRL  => (value >> 1, get_nth_bit(value, 0)),
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[repr(u8)]
+enum Condition {
+    NZ = 0,
+    Z  = 1,
+    NC = 2,
+    C  = 3,
+}
+
+impl TryFrom<u8> for Condition {
+    type Error = ();
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        let r = match value {
+            0 => Condition::NZ, 
+            1 => Condition::Z, 
+            2 => Condition::NC,
+            3 => Condition::C,
+            _ => return Err(()),
+        };
+        Ok(r)
+    }
+}
+
+fn check_condition(cpu: &CPU, conditon: Condition) -> bool {
+    match conditon {
+        Condition::NZ => !cpu.regs.f.zero,
+        Condition::Z  => cpu.regs.f.zero,
+        Condition::NC => !cpu.regs.f.carry,
+        Condition::C  => cpu.regs.f.carry,
     }
 }
 
@@ -517,4 +624,8 @@ fn get_y(val: u8) -> u8 {
 }
 fn get_p(val: u8) -> u8 {
     (val & 0b00110000) >> 4
+}
+
+fn get_r(val: u8) -> u8 {
+    (val & 0b00011000) >> 3
 }
