@@ -8,104 +8,206 @@ pub(super) fn decode(opcode: u16, cpu: &mut CPU) -> Result<u8, u16>{
         0x0076 => {/*HALT*/}
         0x00f3 => {/*DI*/}
         0x00fb => {/*EI*/}
-        0x0001 | 0x0011 | 0x0021 | 0x0031 => {
-            // LD R16G1 [u16]
-            // Flags: - - - -
-            let val = cpu.readu16();
-            let dst = R16G1::try_from(get_p(opcode as u8)).unwrap();
-            write_to_r16_group1(cpu, dst, val);
-        }
+        
+        
+        //////////////////    x8/lsm           ////////////////////////
         0x0002 | 0x0012 | 0x0022 | 0x0032 => {
             // LD [R16G2] A
             // Flags: - - - -
+            // Cycles: 8
             write_to_r16_group2(cpu, opcode as u8, cpu.regs.get_a());
+            8;
         }
-        0x0003 | 0x0013 | 0x0023 | 0x0033 => {
-            // INC R16G1
+        
+        0x000a | 0x001a | 0x002a | 0x003a => {
+            // LD A [R16G2]
+            // Flags: - - - -
+            // Cycles: 8
+            let v = read_from_r16_group2(cpu, opcode as u8);
+            cpu.regs.set_a(v);
+            8;
+        }
+        
+        0x0006 | 0x0016 | 0x0026 | 0x0036 | 0x000e | 0x001e | 0x002e | 0x003e => {
+            // LD r8 [u8]
+            // Flags: - - - -
+            // Cycles: 8/12(hl)
+            let v = cpu.readu8();
+            let (dst, is_hl) = get_r8_reg(get_y(opcode as u8));
+            write_to_r8(cpu, dst, v);
+            if is_hl { 12 } else { 8 };
+        }
+        
+        0x0040..=0x0075 | 0x0077..=0x007f => {
+            // LD r8 r8
             // Flags: - - - - 
-            let reg = R16G1::try_from(get_p(opcode as u8)).unwrap();
-            let val = read_from_r16_group1(cpu, reg);
-            write_to_r16_group1(cpu, reg, val+1);
+            // Cycles: 4/8(hl)
+            let (src, is_hl_src) = get_r8_reg(get_z(opcode as u8));
+            let v = read_from_r8(cpu, src);
+            let (dst, is_hl_dst) = get_r8_reg(get_y(opcode as u8));
+            write_to_r8(cpu, dst, v);
+            if is_hl_src || is_hl_dst { 8 } else { 4 };
         }
+        // load from A
+        // Flags: - - - -
+        // Cycles: 12, 8, 16 (in order)
+        0x00e0 => {
+            let value = cpu.regs.get_a();
+            let addr = (0xff00 + cpu.readu8() as u16).into();
+            cpu.mmu.writeu8(addr, value);
+            12;
+        }
+        0x00e2 => {
+            let value = cpu.regs.get_a();
+            let addr = (0xff00 + cpu.regs.get_c() as u16).into();
+            cpu.mmu.writeu8(addr, value);
+            8;
+        }
+        0x00ea => {
+            let value = cpu.regs.get_a();
+            let addr = cpu.readu16().into();
+            cpu.mmu.writeu8(addr, value);
+            16;
+        }
+
+        // load to A
+        // Flags: - - - -
+        // Cycles: 12, 8, 16 (in order)
+        0x00f0 => {
+            let addr = (0xff00 + cpu.readu8() as u16).into();
+            let value = cpu.mmu.readu8(addr);
+            cpu.regs.set_a(value);
+            12;
+        }
+        0x00f2 => {
+            let addr = (0xff00 + cpu.regs.get_c() as u16).into();
+            let value = cpu.mmu.readu8(addr);
+            cpu.regs.set_a(value);
+            8;
+        }
+        0x00fa => {
+            let addr = cpu.readu16().into();
+            let value = cpu.mmu.readu8(addr);
+            cpu.regs.set_a(value);
+            16;
+        }
+        //////////////////    x8/lsm           ////////////////////////
+
+        //////////////////    x16/lsm           ////////////////////////
+        0x0001 | 0x0011 | 0x0021 | 0x0031 => {
+            // LD R16G1 [u16]
+            // Flags: - - - -
+            // Cycles: 12
+            let val = cpu.readu16();
+            let dst = R16G1::try_from(get_p(opcode as u8)).unwrap();
+            write_to_r16_group1(cpu, dst, val);
+            12;
+        }
+        
+        0x00c1 | 0x00d1 | 0x00e1 | 0x00f1 => {
+            // POP r16g3
+            // Flags: - - - - (except POP AF, but no explicit changes done to flags)
+            // Cycles: 12
+            let val = cpu.pop_stack();
+            let dst = R16G3::try_from(get_p(opcode as u8)).unwrap();
+            write_to_r16_group3(cpu, dst, val);
+            12;
+        }
+        0x00c5 | 0x00d5 | 0x00e5 | 0x00f5 => {
+            // PUSH r16g3
+            // Flags: - - - - 
+            // Cycles: 16
+            let src = R16G3::try_from(get_p(opcode as u8)).unwrap();
+            let val = read_from_r16_group3(cpu, src);
+            cpu.push_stack(val);
+            16;
+        }
+        //////////////////    x16/lsm           ////////////////////////
+
+        /////////////////     x8/alu          /////////////////////////
         0x0004 | 0x0014 | 0x0024 | 0x0034 | 0x000c | 0x001c | 0x002c | 0x003c => {
             // INC r8
             // Flags: Z 0 H -
-            let target = R8::try_from(get_y(opcode as u8)).unwrap();
+            // Cycles: 4/12(hl)
+            let (target, is_hl) = get_r8_reg(get_y(opcode as u8));
             let v = read_from_r8(cpu, target) + 1;
             write_to_r8(cpu, target, v);
             cpu.regs.f.zero =  v == 0;
             cpu.regs.f.subtraction = false;
             cpu.regs.f.half_carry = bit_3_overflow(v, 1);
+            if is_hl { 12 } else { 4 };
         }
         0x0005 | 0x0015 | 0x0025 | 0x0035 | 0x000d | 0x001d | 0x002d | 0x003d => {
             // DEC r8
             // Flags: Z 1 H -
-            let target = R8::try_from(get_y(opcode as u8)).unwrap();
+            // Cycles: 4/12(hl)
+            let (target, is_hl) = get_r8_reg(get_y(opcode as u8));
             let v = read_from_r8(cpu, target) - 1;
             write_to_r8(cpu, target, v);
             cpu.regs.f.zero = v == 0;
             cpu.regs.f.subtraction = true;
             cpu.regs.f.half_carry = bit_4_borrow(v, 1);
+            if is_hl { 12 } else { 4 };
         }
-        0x0006 | 0x0016 | 0x0026 | 0x0036 | 0x000e | 0x001e | 0x002e | 0x003e => {
-            // LD r8 [u8]
-            // Flags: - - - -
-            let v = cpu.readu8();
-            let dst = R8::try_from(get_y(opcode as u8)).unwrap();
-            write_to_r8(cpu, dst, v);
+        0x0080..=0x00bf => {
+            // ALU A r8
+            // Flags: perform_alu8
+            // Cycles: 4/8(hl)
+            let (src, is_hl) = get_r8_reg(get_z(opcode as u8));
+            let op2 = read_from_r8(cpu, src);
+            let operation = AluOp::try_from(get_y(opcode as u8)).unwrap();
+            perform_alu8(cpu, operation, op2);
+            if is_hl { 8 } else { 4 };
         }
+
+        0x00c6 | 0x00d6 | 0x00e6 | 0x00f6 | 0x00ce | 0x00de | 0x00ee | 0x00fe => {
+            // ALU A [u8]
+            // Flags: perform_alu8
+            // Cycles: 8
+            let op2 = cpu.readu8();
+            let operation = AluOp::try_from(get_y(opcode as u8)).unwrap();
+            perform_alu8(cpu, operation, op2);
+            8;
+        }
+
+        /////////////////     x8/alu          /////////////////////////
+
+        /////////////////     x16/alu          /////////////////////////
+        
+        0x0003 | 0x0013 | 0x0023 | 0x0033 => {
+            // INC R16G1
+            // Flags: - - - - 
+            // Cycles: 8
+            let reg = R16G1::try_from(get_p(opcode as u8)).unwrap();
+            let val = read_from_r16_group1(cpu, reg);
+            write_to_r16_group1(cpu, reg, val+1);
+            8;
+        }
+
         0x0009 | 0x0019 | 0x0029 | 0x0039 => {
             // ADD HL R16G1
             // Flags: - - - - 
+            // Cycles: 8
             let dst = R16G1::HL;
             let src = R16G1::try_from(get_p(opcode as u8)).unwrap();
             let val = read_from_r16_group1(cpu, src) + read_from_r16_group1(cpu, dst);
             write_to_r16_group1(cpu, dst, val);
+            8;
         }
-        0x000a | 0x001a | 0x002a | 0x003a => {
-            // LD A [R16G2]
-            // Flags: - - - -
-            let v = read_from_r16_group2(cpu, opcode as u8);
-            cpu.regs.set_a(v);
-        }
+
         0x000b | 0x001b | 0x002b | 0x003b => {
             // DEC R16G1
             // Flags: - - - - 
+            // Cycles: 8
             let reg = R16G1::try_from(get_p(opcode as u8)).unwrap();
             let val = read_from_r16_group1(cpu, reg);
             write_to_r16_group1(cpu, reg, val-1);
+            8;
         }
-        0x0040..=0x0075 | 0x0077..=0x007f => {
-            // Flags: - - - - 
-            r8_to_r8(cpu, opcode as u8);
-        }
-        0x0080..=0x00bf => {
-            // Flags: perform_alu8
-            let src = R8::try_from(get_z(opcode as u8)).unwrap();
-            let op2 = read_from_r8(cpu, src);
-            let operation = AluOp::try_from(get_y(opcode as u8)).unwrap();
-            perform_alu8(cpu, operation, op2);
-        }
-        0x00c1 | 0x00d1 | 0x00e1 | 0x00f1 => {
-            // POP r16g3
-            // Flags: - - - - (except POP AF, but no explicit changes done to flags)
-            let val = cpu.pop_stack();
-            let dst = R16G3::try_from(get_p(opcode as u8)).unwrap();
-            write_to_r16_group3(cpu, dst, val)
-        }
-        0x00c5 | 0x00d5 | 0x00e5 | 0x00f5 => {
-            // PUSH r16g3
-            // Flags: - - - - 
-            let src = R16G3::try_from(get_p(opcode as u8)).unwrap();
-            let val = read_from_r16_group3(cpu, src);
-            cpu.push_stack(val);
-        }
-        0x00c6 | 0x00d6 | 0x00e6 | 0x00f6 | 0x00ce | 0x00de | 0x00ee | 0x00fe => {
-            // Flags: perform_alu8
-            let op2 = cpu.readu8();
-            let operation = AluOp::try_from(get_y(opcode as u8)).unwrap();
-            perform_alu8(cpu, operation, op2);
-        }
+        /////////////////     x16/alu          /////////////////////////
+
+        
+        
         0x0018 => {
             // Unconditional Jump
             // Flags: - - - -
@@ -163,42 +265,6 @@ pub(super) fn decode(opcode: u16, cpu: &mut CPU) -> Result<u8, u16>{
             }
         }
 
-        // load from A
-        // Flags: - - - -
-        0x00e0 => {
-            let value = cpu.regs.get_a();
-            let addr = (0xff00 + cpu.readu8() as u16).into();
-            cpu.mmu.writeu8(addr, value);
-        }
-        0x00e2 => {
-            let value = cpu.regs.get_a();
-            let addr = (0xff00 + cpu.regs.get_c() as u16).into();
-            cpu.mmu.writeu8(addr, value);
-        }
-        0x00ea => {
-            let value = cpu.regs.get_a();
-            let addr = cpu.readu16().into();
-            cpu.mmu.writeu8(addr, value);
-        }
-
-        // load to A
-        // Flags: - - - -
-        0x00f0 => {
-            let addr = (0xff00 + cpu.readu8() as u16).into();
-            let value = cpu.mmu.readu8(addr);
-            cpu.regs.set_a(value);
-        }
-        0x00f2 => {
-            let addr = (0xff00 + cpu.regs.get_c() as u16).into();
-            let value = cpu.mmu.readu8(addr);
-            cpu.regs.set_a(value);
-        }
-        0x00fa => {
-            let addr = cpu.readu16().into();
-            let value = cpu.mmu.readu8(addr);
-            cpu.regs.set_a(value);
-        }
-
         0x0007 | 0x0017 | 0x0027 | 0x0037 | 0x000f | 0x001f | 0x002f | 0x003f => {
             let operation = AccFlagOp::try_from(get_y(opcode as u8)).unwrap();
             perform_acc_flag(cpu, operation);
@@ -210,7 +276,8 @@ pub(super) fn decode(opcode: u16, cpu: &mut CPU) -> Result<u8, u16>{
             // 00 opcode(group 3) r8
             //                  y  z
             // Flags: Z 0 0 C/0  (0 for swap)
-            let target = R8::try_from(get_z(opcode as u8)).unwrap();
+            // Cycles: 8/16(hl)
+            let (target, is_hl) = get_r8_reg(get_z(opcode as u8));
             let res = read_from_r8(cpu, target);
             let operation = SrOp::try_from(get_y(opcode as u8)).unwrap();
             let (res, carry) = perform_sr8(cpu, operation, res);
@@ -219,40 +286,47 @@ pub(super) fn decode(opcode: u16, cpu: &mut CPU) -> Result<u8, u16>{
             cpu.regs.f.subtraction = false;
             cpu.regs.f.half_carry = false;
             cpu.regs.f.carry = carry;
+            if is_hl { 16 } else { 8 };
         }
 
         0xcb40..=0xcb7f => {
             // BIT bit, r8
             //  01   y   z
             // Flags Z 0 1 - 
-            let src = R8::try_from(get_z(opcode as u8)).unwrap();
+            // Cycles: 8/12(hl)
+            let (src, is_hl) = get_r8_reg(get_z(opcode as u8));
             let res = read_from_r8(cpu, src);
             let bit = get_y(opcode as u8);
             let res = get_nth_bit(res, bit);
             cpu.regs.f.zero = !res;
             cpu.regs.f.subtraction = false;
             cpu.regs.f.half_carry = true;
+            if is_hl { 12 } else { 8 };
         }
         
         0xcb80..=0xcbbf => {
             // RES bit, r8
             //  10   y   z
             // Flags: - - - - 
-            let target = R8::try_from(get_z(opcode as u8)).unwrap();
+            // Cycles: 8/16(hl)
+            let (target, is_hl) = get_r8_reg(get_z(opcode as u8));
             let res = read_from_r8(cpu, target);
             let bit = get_y(opcode as u8);
             let res = unset_nth_bit(res, bit);
             write_to_r8(cpu, target, res);
+            if is_hl { 16 } else { 8 };
         }
         0xcbc0..=0xcbff => {
             // SET bit, r8
             //  11   y   z
             // Flags: - - - - 
-            let target = R8::try_from(get_z(opcode as u8)).unwrap();
+            // Cycles: 8/16(hl)
+            let (target, is_hl) = get_r8_reg(get_z(opcode as u8));
             let res = read_from_r8(cpu, target);
             let bit = get_y(opcode as u8);
             let res = set_nth_bit(res, bit);
             write_to_r8(cpu, target, res);
+            if is_hl { 16 } else { 8 };
         }
         _ => panic!("Unimplemented opcode: {:#x}", opcode),
     };
@@ -290,6 +364,16 @@ impl TryFrom<u8> for R8 {
     }
 }
 
+fn get_r8_reg(oct: u8) -> (R8, bool) {
+    assert!(oct < 8);
+    let r8 = R8::try_from(oct).unwrap();
+    let is_hl = match r8 {
+        R8::HL => true, 
+        _      => false,
+    };
+    (r8, is_hl)
+}
+
 fn read_from_r8(cpu: &mut CPU, src: R8) -> u8 {
     match src {
         R8::B => cpu.regs.get_b(),
@@ -315,13 +399,6 @@ fn write_to_r8(cpu: &mut CPU, dst: R8, v: u8) {
         R8::A => cpu.regs.set_a(v),
     }
 
-}
-
-fn r8_to_r8(cpu: &mut CPU, opcode: u8) {
-    let src = R8::try_from(get_z(opcode)).unwrap();
-    let v = read_from_r8(cpu, src);
-    let dst = R8::try_from(get_y(opcode)).unwrap();
-    write_to_r8(cpu, dst, v);
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
