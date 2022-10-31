@@ -82,7 +82,7 @@ impl CPU {
             opcode = opcode << 8 | self.readu8() as u16;
         }
         // println!("{:#x?}\t", opcode);
-        decode(opcode, self).unwrap();
+        let _cycles = decode(opcode, self);
     }
 
     // stack
