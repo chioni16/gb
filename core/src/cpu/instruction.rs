@@ -258,62 +258,131 @@ pub(super) fn decode(opcode: u16, cpu: &mut CPU) -> Result<u8, u16>{
         }
         /////////////////     x16/alu          /////////////////////////
         
+        /////////////////     control/br      /////////////////////////
         0x0018 => {
-            // Unconditional Jump
+            // JR i8
             // Flags: - - - -
+            // Cycles: 12
             let jmp = cpu.readu8() as i8;
             let cur_pc: u16 = cpu.pc.into();
             let next_pc = cur_pc.wrapping_add_signed(jmp as i16);
             cpu.pc = next_pc.into();
+            12;
         }
 
         0x0020 | 0x0030 | 0x0028 | 0x0038 => {
-            // Conditonal Jump
+            // JR Condition i8
             // Flags: - - - -
+            // Cycles: 8/12(br taken)
             let condition = Condition::try_from(get_r(opcode as u8)).unwrap();
             let jmp = cpu.readu8() as i8;
             if check_condition(cpu, condition) {
+                // branch taken
                 let cur_pc: u16 = cpu.pc.into();
                 let next_pc = cur_pc.wrapping_add_signed(jmp as i16);
                 cpu.pc = next_pc.into();
+                12;
+            } else {
+                // branch not taken
+                8;
             }
         }
 
-        0x00cd => {
-            // Unconditional Call
+        0x00c3 => {
+            // JP u16
             // Flags: - - - -
+            // Cycles: 16
+            let next_pc = cpu.readu16().into();
+            cpu.pc = next_pc;
+            16;
+        }
+        0x00c2 | 0x00d2 | 0x00ca | 0x00da => {
+            // JP Condition u16
+            // Flags: - - - -
+            // Cycles: 12/16(br taken)
+            let condition = Condition::try_from(get_r(opcode as u8)).unwrap();
+            let next_pc = cpu.readu16().into();
+            if check_condition(cpu, condition) {
+                // branch taken
+                cpu.pc = next_pc;
+                16;
+            } else {
+                // branch not taken
+                12;
+            }
+        }
+        0x00e9 => {
+            // JP HL
+            // Flags: - - - -
+            // Cycles: 4
+            let new_pc = cpu.regs.get_hl().into();
+            cpu.pc = new_pc;
+            4;
+        }
+
+        0x00cd => {
+            // CALL u16
+            // Flags: - - - -
+            // Cycles: 24
             let next_pc = cpu.readu16();
             cpu.push_stack(cpu.pc.into());
             cpu.pc = next_pc.into();
+            24;
         }
 
         0x00c4 | 0x00d4 | 0x00cc | 0x00dc => {
-            // Conditional Call
+            // CALL Condition u16
             // Flags: - - - -
+            // Cycles: 12/24(br taken)
             let condition = Condition::try_from(get_r(opcode as u8)).unwrap();
             let next_pc = cpu.readu16();
             if check_condition(cpu, condition) {
+                // branch taken
                 cpu.push_stack(cpu.pc.into());
                 cpu.pc = next_pc.into();
+                24;
+            } else {
+                // branch not taken
+                12;
             }
         }
 
         0x00c9 => {
-            // Unconditional Return
+            // RET
             // Flags: - - - -
+            // Cycles: 16
             let ret_pc = cpu.pop_stack();
             cpu.pc = ret_pc.into();
+            16;
         }
 
-        0x00c0 | 0x00d0 | 0x00c8 | 0x00d8 => {
-            // Conditional Return
+        0x00d9 => {
+            // RETI
             // Flags: - - - -
+            // Cycles: 16
+            todo!();
+            let ret_pc = cpu.pop_stack();
+            cpu.pc = ret_pc.into();
+            16;
+        }
+        0x00c0 | 0x00d0 | 0x00c8 | 0x00d8 => {
+            // Conditional RET
+            // Flags: - - - -
+            // Cycles: 8/20(br taken)
             let condition = Condition::try_from(get_r(opcode as u8)).unwrap();
             if check_condition(cpu, condition) {
+                // branch taken
                 let ret_pc = cpu.pop_stack();
                 cpu.pc = ret_pc.into();
+                20;
+            } else {
+                // branch not taken
+                8;
             }
         }
+
+        /////////////////     control/br      /////////////////////////
+        
 
         0x0007 | 0x0017 | 0x0027 | 0x0037 | 0x000f | 0x001f | 0x002f | 0x003f => {
             let operation = AccFlagOp::try_from(get_y(opcode as u8)).unwrap();
