@@ -103,6 +103,16 @@ pub(super) fn decode(opcode: u16, cpu: &mut CPU) -> Result<u8, u16>{
             write_to_r16_group1(cpu, dst, val);
             12;
         }
+
+        0x0008 => {
+            // LD [u16] SP
+            // Flags: - - - -
+            // Cycles: 20
+            let target: Addr = cpu.readu16().into();
+            let value: u16 = cpu.sp.into();
+            cpu.mmu.writeu16(target, value);
+            20;
+        }
         
         0x00c1 | 0x00d1 | 0x00e1 | 0x00f1 => {
             // POP r16g3
@@ -121,6 +131,14 @@ pub(super) fn decode(opcode: u16, cpu: &mut CPU) -> Result<u8, u16>{
             let val = read_from_r16_group3(cpu, src);
             cpu.push_stack(val);
             16;
+        }
+        0x00f9 => {
+            // LD SP, HL
+            // Flags: - - - -
+            // Cycles: 8
+            let value = cpu.regs.get_hl();
+            cpu.sp = value.into();
+            8;
         }
         //////////////////    x16/lsm           ////////////////////////
 
@@ -204,9 +222,41 @@ pub(super) fn decode(opcode: u16, cpu: &mut CPU) -> Result<u8, u16>{
             write_to_r16_group1(cpu, reg, val-1);
             8;
         }
-        /////////////////     x16/alu          /////////////////////////
 
-        
+        0x00e8 => {
+            // ADD SP i8
+            // Flags: 0 0 H C
+            // Cycles: 16
+            let value = cpu.readu8() as i8;
+            let sp: u16 = cpu.sp.into();
+            let new_sp = sp.wrapping_add_signed(value as i16);
+            cpu.sp = new_sp.into();
+
+            cpu.regs.f.zero = false;
+            cpu.regs.f.subtraction = false;
+            todo!();
+            cpu.regs.f.half_carry = true;
+            cpu.regs.f.carry = true;
+            16;
+        }
+
+        0x00f8 => {
+            // LD HL,SP+i8 
+            // Flags: 0 0 H C
+            // Cycles: 12
+            let value = cpu.readu8() as i8;
+            let sp: u16 = cpu.sp.into();
+            let new_value = sp.wrapping_add_signed(value as i16);
+            cpu.regs.set_hl(new_value);
+
+            cpu.regs.f.zero = false;
+            cpu.regs.f.subtraction = false;
+            todo!();
+            cpu.regs.f.half_carry = true;
+            cpu.regs.f.carry = true;
+            12;
+        }
+        /////////////////     x16/alu          /////////////////////////
         
         0x0018 => {
             // Unconditional Jump
