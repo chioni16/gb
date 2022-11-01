@@ -34,11 +34,11 @@ impl BusIO for ROM {
         let addr: u16 = addr.into();
         Ok(u16::from_le_bytes([self.0[addr as usize], self.0[addr as usize +1]]))
     }
-    fn writeu8(&mut self, _addr: Addr, _value: u8) -> SResult<()>{
-        unimplemented!()
+    fn writeu8(&mut self, addr: Addr, _value: u8) -> SResult<()>{
+        panic!("write request for ROM, addr: {:#x?}", addr);
     }
-    fn writeu16(&mut self, _addr: Addr, _value: u16) -> SResult<()> {
-        unimplemented!()
+    fn writeu16(&mut self, addr: Addr, _value: u16) -> SResult<()> {
+        panic!("write request for ROM, addr: {:#x?}", addr);
     }
     fn print_dbg(&self, _start: Addr, _len: u16) -> String {
         "".into()
@@ -140,6 +140,8 @@ impl MMU {
         mmu.map("WRAM".into(), RAM::new(8 * 1024), 0xc000.into(), 0xdfff.into(), true).unwrap();
         mmu.map("IOREGS".into(), RAM::new(0xff7f-0xff00+1), 0xff00.into(), 0xff7f.into(), true).unwrap();
         mmu.map("HRAM".into(), RAM::new(0xfffe-0xff80+1), 0xff80.into(), 0xfffe.into(), true).unwrap();
+        mmu.map("IER".into(), RAM::new(0x01), 0xffff.into(), 0xffff.into(), true).unwrap();
+        mmu.writeu8(0xff44.into(), 0x90);
         mmu
     }
 
@@ -176,14 +178,14 @@ impl MMU {
             .find(|(_, r)| r.start <= addr && addr <= r.end )
             .map(|(_, r)| r)
             // .ok_or(panic!("Find Region: No mapping found for the address {addr}"))
-            .ok_or(format!("Find Region: No mapping found for the address {addr}").into())
+            .ok_or(format!("Find Region: No mapping found for the address {:#x?}", addr).into())
     }
 
     fn find_region_mut(&mut self, addr: Addr) -> SResult<&mut Region> {
         self.0.iter_mut()
             .find(|(_, r)| r.start <= addr && addr <= r.end )
             .map(|(_, r)| r)
-            .ok_or(format!("Find Region Mut: No mapping found for the address {addr}").into())
+            .ok_or(format!("Find Region Mut: No mapping found for the address {:#x?}", addr).into())
     }
 
     // exposing the methods for reading and writing values to different mapped devices/regions
@@ -202,6 +204,12 @@ impl MMU {
         region.writeu16(addr, value).unwrap()
     }
     pub(crate) fn writeu8(&mut self, addr: Addr, value: u8) {
+        if addr == 0xff01.into() {
+            // if self.readu8(0xff02.into()) == 0x81 {
+                eprintln!("{}", value as char);
+            // }
+            // return 
+        }
         let region = self.find_region_mut(addr).unwrap();
         region.writeu8(addr, value).unwrap()
     }

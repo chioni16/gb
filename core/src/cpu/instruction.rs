@@ -163,11 +163,13 @@ pub(super) fn decode(opcode: u16, cpu: &mut CPU) -> usize {
             // Flags: Z 0 H -
             // Cycles: 4/12(hl)
             let (target, is_hl) = get_r8_reg(get_y(opcode as u8));
-            let v = read_from_r8(cpu, target) + 1;
-            write_to_r8(cpu, target, v);
-            cpu.regs.f.zero =  v == 0;
+            let value = read_from_r8(cpu, target);
+            let new_value = value + 1;
+            write_to_r8(cpu, target, new_value);
+            cpu.regs.f.zero =  new_value == 0;
             cpu.regs.f.subtraction = false;
-            cpu.regs.f.half_carry = bit_3_overflow(v, 1);
+            // eprintln!("INC: {}, {}, {}", v, 1, bit_3_overflow(v, 1));
+            cpu.regs.f.half_carry = bit_3_overflow(value, 1);
             if is_hl { 12 } else { 4 }
         }
         0x0005 | 0x0015 | 0x0025 | 0x0035 | 0x000d | 0x001d | 0x002d | 0x003d => {
@@ -175,11 +177,12 @@ pub(super) fn decode(opcode: u16, cpu: &mut CPU) -> usize {
             // Flags: Z 1 H -
             // Cycles: 4/12(hl)
             let (target, is_hl) = get_r8_reg(get_y(opcode as u8));
-            let v = read_from_r8(cpu, target) - 1;
-            write_to_r8(cpu, target, v);
-            cpu.regs.f.zero = v == 0;
+            let value = read_from_r8(cpu, target);
+            let new_value = value - 1;
+            write_to_r8(cpu, target, new_value);
+            cpu.regs.f.zero = new_value == 0;
             cpu.regs.f.subtraction = true;
-            cpu.regs.f.half_carry = bit_4_borrow(v, 1);
+            cpu.regs.f.half_carry = bit_4_borrow(value, 1);
             if is_hl { 12 } else { 4 }
         }
         0x0080..=0x00bf => {
@@ -219,12 +222,17 @@ pub(super) fn decode(opcode: u16, cpu: &mut CPU) -> usize {
 
         0x0009 | 0x0019 | 0x0029 | 0x0039 => {
             // ADD HL R16G1
-            // Flags: - - - - 
+            // Flags: - 0 H C 
             // Cycles: 8
             let dst = R16G1::HL;
             let src = R16G1::try_from(get_p(opcode as u8)).unwrap();
-            let val = read_from_r16_group1(cpu, src) + read_from_r16_group1(cpu, dst);
-            write_to_r16_group1(cpu, dst, val);
+            let val1 = read_from_r16_group1(cpu, src);
+            let val2 = read_from_r16_group1(cpu, dst);
+            let (new_val, of) = val1.overflowing_add(val2);
+            write_to_r16_group1(cpu, dst, new_val);
+            cpu.regs.f.subtraction = false;
+            cpu.regs.f.half_carry = bit_11_overflow(val1, val2);
+            cpu.regs.f.carry = of;
             8
         }
 
@@ -244,14 +252,14 @@ pub(super) fn decode(opcode: u16, cpu: &mut CPU) -> usize {
             // Cycles: 16
             let value = cpu.readu8() as i8;
             let sp: u16 = cpu.sp.into();
-            let new_sp = sp.wrapping_add_signed(value as i16);
+            let (new_sp, of) = sp.overflowing_add_signed(value as i16);
             cpu.sp = new_sp.into();
 
             cpu.regs.f.zero = false;
             cpu.regs.f.subtraction = false;
-            todo!();
-            cpu.regs.f.half_carry = true;
-            cpu.regs.f.carry = true;
+            cpu.regs.f.half_carry = bit_3_overflow(sp as u8, value as u8);
+            let (_, of) = (sp as u8).overflowing_add(value as u8);
+            cpu.regs.f.carry = of;
             16
         }
 
@@ -261,14 +269,14 @@ pub(super) fn decode(opcode: u16, cpu: &mut CPU) -> usize {
             // Cycles: 12
             let value = cpu.readu8() as i8;
             let sp: u16 = cpu.sp.into();
-            let new_value = sp.wrapping_add_signed(value as i16);
+            let (new_value, of) = sp.overflowing_add_signed(value as i16);
             cpu.regs.set_hl(new_value);
 
             cpu.regs.f.zero = false;
             cpu.regs.f.subtraction = false;
-            todo!();
-            cpu.regs.f.half_carry = true;
-            cpu.regs.f.carry = true;
+            cpu.regs.f.half_carry = bit_3_overflow(sp as u8, value as u8);
+            let (_, of) = (sp as u8).overflowing_add(value as u8);
+            cpu.regs.f.carry = of;
             12
         }
         /////////////////     x16/alu          /////////////////////////
@@ -375,7 +383,7 @@ pub(super) fn decode(opcode: u16, cpu: &mut CPU) -> usize {
             // RETI
             // Flags: - - - -
             // Cycles: 16
-            todo!();
+            // todo!();
             let ret_pc = cpu.pop_stack();
             cpu.pc = ret_pc.into();
             16
@@ -396,13 +404,24 @@ pub(super) fn decode(opcode: u16, cpu: &mut CPU) -> usize {
             }
         }
 
+        0x00c7 | 0x00d7 | 0x00e7 | 0x00f7 | 0x00cf | 0x00df | 0x00ef | 0x00ff => {
+            // RST
+            // Flags: - - - -
+            // Cycles: 16
+            let vec = get_y(opcode as u8) as u16;
+            cpu.push_stack(cpu.pc.into());
+            cpu.pc = vec.into();
+            16
+        }
+
         /////////////////     control/br      /////////////////////////
         
 
         0x0007 | 0x0017 | 0x0027 | 0x0037 | 0x000f | 0x001f | 0x002f | 0x003f => {
             let operation = AccFlagOp::try_from(get_y(opcode as u8)).unwrap();
             perform_acc_flag(cpu, operation);
-            todo!()
+            // todo!()
+            4
         }
 
         // cbprefixed
@@ -722,7 +741,7 @@ fn perform_alu8(cpu: &mut CPU, operation: AluOp, op2: u8) {
             let (res, of) = a.carrying_add(op2, cpu.regs.f.carry);
             cpu.regs.f.zero = res == 0;
             cpu.regs.f.subtraction = false;
-            cpu.regs.f.half_carry = bit_3_overflow(a, op2);
+            cpu.regs.f.half_carry = bit_3_overflow(a, op2) || bit_3_overflow(a+op2, cpu.regs.f.carry as u8);
             cpu.regs.f.carry = of;
             cpu.regs.set_a(res);
         }
@@ -740,7 +759,7 @@ fn perform_alu8(cpu: &mut CPU, operation: AluOp, op2: u8) {
             let (res, of) = a.borrowing_sub(op2, cpu.regs.f.carry);
             cpu.regs.f.zero = res == 0;
             cpu.regs.f.subtraction = true;
-            cpu.regs.f.half_carry = bit_4_borrow(a, op2);
+            cpu.regs.f.half_carry = bit_4_borrow(a, op2) || bit_4_borrow(a-op2, cpu.regs.f.carry as u8);
             cpu.regs.f.carry = of;
             cpu.regs.set_a(res);
         }
@@ -898,14 +917,85 @@ impl TryFrom<u8> for AccFlagOp {
 
 fn perform_acc_flag(cpu: &mut CPU, operation: AccFlagOp) {
     match operation {
+        AccFlagOp::RLCA => {
+            let value = cpu.regs.get_a();
+            let new_value = value.rotate_left(1);
+            cpu.regs.set_a(new_value);
+            cpu.regs.f.zero = false;
+            cpu.regs.f.subtraction = false;
+            cpu.regs.f.half_carry = false;
+            cpu.regs.f.carry = get_nth_bit(value, 7);
+        }
+        AccFlagOp::RRCA => {
+            let value = cpu.regs.get_a();
+            let new_value = value.rotate_right(1);
+            cpu.regs.set_a(new_value);
+            cpu.regs.f.zero = false;
+            cpu.regs.f.subtraction = false;
+            cpu.regs.f.half_carry = false;
+            cpu.regs.f.carry = get_nth_bit(value, 0);
+        }
         AccFlagOp::RLA => {
             let value = cpu.regs.get_a();
             let new_value = nth_bit_to(value << 1, 0, cpu.regs.f.carry);
             cpu.regs.set_a(new_value);
-            cpu.regs.f.zero = new_value == 0;
+            cpu.regs.f.zero = false;
+            cpu.regs.f.subtraction = false;
+            cpu.regs.f.half_carry = false;
             cpu.regs.f.carry = get_nth_bit(value, 7);
         }
-        _ => unimplemented!()
+        AccFlagOp::RRA => {
+            let value = cpu.regs.get_a();
+            let new_value = nth_bit_to(value >> 1, 7, cpu.regs.f.carry);
+            cpu.regs.set_a(new_value);
+            cpu.regs.f.zero = false;
+            cpu.regs.f.subtraction = false;
+            cpu.regs.f.half_carry = false;
+            cpu.regs.f.carry = get_nth_bit(value, 0);
+        }
+        AccFlagOp::DAA => {
+            // https://forums.nesdev.org/viewtopic.php?t=15944#:~:text=The%20DAA%20instruction%20adjusts%20the,%2C%20lower%20nybble%2C%20or%20both.
+            // Flags: Z - 0 C
+            let mut value = cpu.regs.get_a();
+            if !cpu.regs.f.subtraction {
+                if cpu.regs.f.carry || value > 0x99 {
+                    value += 0x60;
+                    cpu.regs.f.carry = true;   
+                }
+                if cpu.regs.f.half_carry || (value & 0x0f) > 0x09 {
+                    value += 0x06;
+                }
+            } else {
+                if cpu.regs.f.carry {
+                    value -= 0x60;
+                }
+                if cpu.regs.f.half_carry {
+                    value -= 0x06;
+                }
+            }
+            cpu.regs.set_a(value);
+            cpu.regs.f.zero = value == 0;
+            cpu.regs.f.half_carry = false;
+        }
+        AccFlagOp::CPL => {
+            // Flags: - 1 1 -
+            let a = cpu.regs.get_a();
+            cpu.regs.set_a(!a);
+            cpu.regs.f.subtraction = true;
+            cpu.regs.f.half_carry = true;
+        }
+        AccFlagOp::SCF => {
+            // Flags: - 0 0 !C
+            cpu.regs.f.subtraction = false;
+            cpu.regs.f.half_carry = false;
+            cpu.regs.f.carry = true;
+        }
+        AccFlagOp::CCF => {
+            // Flags: - 0 0 !C
+            cpu.regs.f.subtraction = false;
+            cpu.regs.f.half_carry = false;
+            cpu.regs.f.carry = !cpu.regs.f.carry;
+        }
     }
 }
 
@@ -938,6 +1028,14 @@ fn toggle_nth_bit(val: u8, n: u8) -> u8 {
 fn swap_nibbles(val: u8) -> u8 {
     ((val & 0x0f) << 4) | ((val & 0xf0) >> 4)
 }
+
+fn bit_11_overflow(op1: u16, op2: u16) -> bool {
+    (((op1 & 0x0fff) + (op2 & 0x0fff)) & 0x1000) == 0x1000
+}
+
+// fn bit_7_overflow(op1: u8, op2: u8) -> bool {
+//     (((op1 & 0xff) + (op2 & 0xff)) & 0x100) == 0x100
+// }
 
 fn bit_3_overflow(op1: u8, op2: u8) -> bool {
     (((op1 & 0xf) + (op2 & 0xf)) & 0x10) == 0x10

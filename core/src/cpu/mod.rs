@@ -6,7 +6,8 @@ mod registers;
 
 use instruction::decode;
 use mmu::MMU;
-use registers::{Registers, Flags};
+use registers::Registers;
+use crate::cpu::registers::Flags;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub (crate) struct Addr(u16);
@@ -73,6 +74,19 @@ impl CPU {
             pc: Addr::new(),
             sp: Addr::new(),
         }
+    }
+
+    pub fn no_boot(&mut self) {
+        self.regs.a = 0x01;
+        self.regs.f = 0xb0.into();
+        self.regs.b = 0x00;
+        self.regs.c = 0x13;
+        self.regs.d = 0x00;
+        self.regs.e = 0xd8;
+        self.regs.h = 0x01;
+        self.regs.l = 0x4d;
+        self.pc = 0x0100.into();
+        self.sp = 0xfffe.into();
     }
    
     pub(crate) fn step(&mut self) {

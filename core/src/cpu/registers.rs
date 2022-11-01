@@ -20,10 +20,10 @@ impl Flags {
 impl From<u8> for Flags {
     fn from(value: u8) -> Self {
         let mut f = Self::new();     
-        f.zero = (value >> 7) == 1; 
-        f.subtraction = (value >> 6) == 1;
-        f.half_carry = (value >> 5) == 1;
-        f.carry = (value >> 4) == 1;
+        f.zero = ((value >> 7) & 1) == 1; 
+        f.subtraction = ((value >> 6) & 1) == 1 ;
+        f.half_carry = ((value >> 5) & 1) == 1;
+        f.carry = ((value >> 4) & 1) == 1;
         f
     }
 }
