@@ -19,6 +19,10 @@ impl Addr {
     fn new() -> Self {
         Self(0)
     }
+
+    const fn from(value: u16) -> Self {
+        Self(value)
+    }
 }
 
 impl Add for Addr {
