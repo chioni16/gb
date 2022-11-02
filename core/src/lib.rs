@@ -9,6 +9,7 @@ use std::{ops::{Add, AddAssign, Sub, SubAssign}, fmt::Display};
 
 use cpu::CPU;
 use mmu::MMU;
+use ppu::PPU;
 
 // const DEBUG: bool = true;
 
@@ -65,6 +66,7 @@ impl Display for Addr {
 pub struct Machine {
     cpu: CPU,
     mmu: MMU,
+    ppu: PPU,
 }
 
 impl Machine {
@@ -90,6 +92,7 @@ impl Machine {
         let mut m = Self {
             cpu: CPU::new(),
             mmu: MMU::new(buf),
+            ppu: PPU::new(),
         };
         m.cpu.no_boot();
         Ok(m)
@@ -99,7 +102,8 @@ impl Machine {
             if cfg!(feature="debug") {
                 pause();
             }
-            self.cpu.step(&mut self.mmu);
+            let cpu_ticks = self.cpu.step(&mut self.mmu);
+            self.ppu.tick(&mut self.mmu, cpu_ticks);
         }
     }
 }

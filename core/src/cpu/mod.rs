@@ -36,14 +36,14 @@ impl CPU {
         self.sp = 0xfffe.into();
     }
    
-    pub(crate) fn step(&mut self, mmu: &mut MMU) {
+    pub(crate) fn step(&mut self, mmu: &mut MMU) -> usize {
         println!("A: {:0>2X} F: {:0>2X} B: {:0>2X} C: {:0>2X} D: {:0>2X} E: {:0>2X} H: {:0>2X} L: {:0>2X} SP: {:0>4X} PC: 00:{:0>4X} ({:0>2X} {:0>2X} {:0>2X} {:0>2X})", self.regs.a, <Flags as Into<u8>>::into(self.regs.f), self.regs.b, self.regs.c, self.regs.d, self.regs.e, self.regs.h, self.regs.l, self.sp.0, self.pc.0, mmu.readu8(self.pc),mmu.readu8(self.pc+1.into()),mmu.readu8(self.pc+2.into()),mmu.readu8(self.pc+3.into()));
         let mut opcode = self.readu8(mmu) as u16;
         if opcode == 0xcb {
             opcode = opcode << 8 | self.readu8(mmu) as u16;
         }
         // println!("{:#x?}\t", opcode);
-        let _cycles = decode(opcode, self, mmu);
+        decode(opcode, self, mmu)
     }
 
     // stack
