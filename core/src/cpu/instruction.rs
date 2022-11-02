@@ -1,6 +1,7 @@
 use super::{CPU, Addr};
+use crate::mmu::MMU;
 
-pub(super) fn decode(opcode: u16, cpu: &mut CPU) -> usize {
+pub(super) fn decode(opcode: u16, cpu: &mut CPU, mmu: &mut MMU) -> usize {
     // println!("{:#x}", opcode);
     match opcode {
         0x0000 => {
@@ -30,7 +31,7 @@ pub(super) fn decode(opcode: u16, cpu: &mut CPU) -> usize {
             // LD [R16G2] A
             // Flags: - - - -
             // Cycles: 8
-            write_to_r16_group2(cpu, opcode as u8, cpu.regs.get_a());
+            write_to_r16_group2(cpu, mmu, opcode as u8, cpu.regs.get_a());
             8
         }
         
@@ -38,7 +39,7 @@ pub(super) fn decode(opcode: u16, cpu: &mut CPU) -> usize {
             // LD A [R16G2]
             // Flags: - - - -
             // Cycles: 8
-            let v = read_from_r16_group2(cpu, opcode as u8);
+            let v = read_from_r16_group2(cpu, mmu, opcode as u8);
             cpu.regs.set_a(v);
             8
         }
@@ -47,9 +48,9 @@ pub(super) fn decode(opcode: u16, cpu: &mut CPU) -> usize {
             // LD r8 [u8]
             // Flags: - - - -
             // Cycles: 8/12(hl)
-            let v = cpu.readu8();
+            let v = cpu.readu8(mmu);
             let (dst, is_hl) = get_r8_reg(get_y(opcode as u8));
-            write_to_r8(cpu, dst, v);
+            write_to_r8(cpu, mmu, dst, v);
             if is_hl { 12 } else { 8 }
         }
         
@@ -58,9 +59,9 @@ pub(super) fn decode(opcode: u16, cpu: &mut CPU) -> usize {
             // Flags: - - - - 
             // Cycles: 4/8(hl)
             let (src, is_hl_src) = get_r8_reg(get_z(opcode as u8));
-            let v = read_from_r8(cpu, src);
+            let v = read_from_r8(cpu, mmu, src);
             let (dst, is_hl_dst) = get_r8_reg(get_y(opcode as u8));
-            write_to_r8(cpu, dst, v);
+            write_to_r8(cpu, mmu, dst, v);
             if is_hl_src || is_hl_dst { 8 } else { 4 }
         }
         // load from A
@@ -68,20 +69,20 @@ pub(super) fn decode(opcode: u16, cpu: &mut CPU) -> usize {
         // Cycles: 12, 8, 16 (in order)
         0x00e0 => {
             let value = cpu.regs.get_a();
-            let addr = (0xff00 + cpu.readu8() as u16).into();
-            cpu.mmu.writeu8(addr, value);
+            let addr = (0xff00 + cpu.readu8(mmu) as u16).into();
+            mmu.writeu8(addr, value);
             12
         }
         0x00e2 => {
             let value = cpu.regs.get_a();
             let addr = (0xff00 + cpu.regs.get_c() as u16).into();
-            cpu.mmu.writeu8(addr, value);
+            mmu.writeu8(addr, value);
             8
         }
         0x00ea => {
             let value = cpu.regs.get_a();
-            let addr = cpu.readu16().into();
-            cpu.mmu.writeu8(addr, value);
+            let addr = cpu.readu16(mmu).into();
+            mmu.writeu8(addr, value);
             16
         }
 
@@ -89,20 +90,20 @@ pub(super) fn decode(opcode: u16, cpu: &mut CPU) -> usize {
         // Flags: - - - -
         // Cycles: 12, 8, 16 (in order)
         0x00f0 => {
-            let addr = (0xff00 + cpu.readu8() as u16).into();
-            let value = cpu.mmu.readu8(addr);
+            let addr = (0xff00 + cpu.readu8(mmu) as u16).into();
+            let value = mmu.readu8(addr);
             cpu.regs.set_a(value);
             12
         }
         0x00f2 => {
             let addr = (0xff00 + cpu.regs.get_c() as u16).into();
-            let value = cpu.mmu.readu8(addr);
+            let value = mmu.readu8(addr);
             cpu.regs.set_a(value);
             8
         }
         0x00fa => {
-            let addr = cpu.readu16().into();
-            let value = cpu.mmu.readu8(addr);
+            let addr = cpu.readu16(mmu).into();
+            let value = mmu.readu8(addr);
             cpu.regs.set_a(value);
             16
         }
@@ -113,7 +114,7 @@ pub(super) fn decode(opcode: u16, cpu: &mut CPU) -> usize {
             // LD R16G1 [u16]
             // Flags: - - - -
             // Cycles: 12
-            let val = cpu.readu16();
+            let val = cpu.readu16(mmu);
             let dst = R16G1::try_from(get_p(opcode as u8)).unwrap();
             write_to_r16_group1(cpu, dst, val);
             12
@@ -123,9 +124,9 @@ pub(super) fn decode(opcode: u16, cpu: &mut CPU) -> usize {
             // LD [u16] SP
             // Flags: - - - -
             // Cycles: 20
-            let target: Addr = cpu.readu16().into();
+            let target: Addr = cpu.readu16(mmu).into();
             let value: u16 = cpu.sp.into();
-            cpu.mmu.writeu16(target, value);
+            mmu.writeu16(target, value);
             20
         }
         
@@ -133,7 +134,7 @@ pub(super) fn decode(opcode: u16, cpu: &mut CPU) -> usize {
             // POP r16g3
             // Flags: - - - - (except POP AF, but no explicit changes done to flags)
             // Cycles: 12
-            let val = cpu.pop_stack();
+            let val = cpu.pop_stack(mmu);
             let dst = R16G3::try_from(get_p(opcode as u8)).unwrap();
             write_to_r16_group3(cpu, dst, val);
             12
@@ -144,7 +145,7 @@ pub(super) fn decode(opcode: u16, cpu: &mut CPU) -> usize {
             // Cycles: 16
             let src = R16G3::try_from(get_p(opcode as u8)).unwrap();
             let val = read_from_r16_group3(cpu, src);
-            cpu.push_stack(val);
+            cpu.push_stack(mmu, val);
             16
         }
         0x00f9 => {
@@ -163,9 +164,9 @@ pub(super) fn decode(opcode: u16, cpu: &mut CPU) -> usize {
             // Flags: Z 0 H -
             // Cycles: 4/12(hl)
             let (target, is_hl) = get_r8_reg(get_y(opcode as u8));
-            let value = read_from_r8(cpu, target);
+            let value = read_from_r8(cpu, mmu, target);
             let new_value = value + 1;
-            write_to_r8(cpu, target, new_value);
+            write_to_r8(cpu, mmu, target, new_value);
             cpu.regs.f.zero =  new_value == 0;
             cpu.regs.f.subtraction = false;
             // eprintln!("INC: {}, {}, {}", v, 1, bit_3_overflow(v, 1));
@@ -177,9 +178,9 @@ pub(super) fn decode(opcode: u16, cpu: &mut CPU) -> usize {
             // Flags: Z 1 H -
             // Cycles: 4/12(hl)
             let (target, is_hl) = get_r8_reg(get_y(opcode as u8));
-            let value = read_from_r8(cpu, target);
+            let value = read_from_r8(cpu, mmu, target);
             let new_value = value - 1;
-            write_to_r8(cpu, target, new_value);
+            write_to_r8(cpu, mmu, target, new_value);
             cpu.regs.f.zero = new_value == 0;
             cpu.regs.f.subtraction = true;
             cpu.regs.f.half_carry = bit_4_borrow(value, 1);
@@ -190,7 +191,7 @@ pub(super) fn decode(opcode: u16, cpu: &mut CPU) -> usize {
             // Flags: perform_alu8
             // Cycles: 4/8(hl)
             let (src, is_hl) = get_r8_reg(get_z(opcode as u8));
-            let op2 = read_from_r8(cpu, src);
+            let op2 = read_from_r8(cpu, mmu, src);
             let operation = AluOp::try_from(get_y(opcode as u8)).unwrap();
             perform_alu8(cpu, operation, op2);
             if is_hl { 8 } else { 4 }
@@ -200,7 +201,7 @@ pub(super) fn decode(opcode: u16, cpu: &mut CPU) -> usize {
             // ALU A [u8]
             // Flags: perform_alu8
             // Cycles: 8
-            let op2 = cpu.readu8();
+            let op2 = cpu.readu8(mmu);
             let operation = AluOp::try_from(get_y(opcode as u8)).unwrap();
             perform_alu8(cpu, operation, op2);
             8
@@ -250,9 +251,9 @@ pub(super) fn decode(opcode: u16, cpu: &mut CPU) -> usize {
             // ADD SP i8
             // Flags: 0 0 H C
             // Cycles: 16
-            let value = cpu.readu8() as i8;
+            let value = cpu.readu8(mmu) as i8;
             let sp: u16 = cpu.sp.into();
-            let (new_sp, of) = sp.overflowing_add_signed(value as i16);
+            let (new_sp, _) = sp.overflowing_add_signed(value as i16);
             cpu.sp = new_sp.into();
 
             cpu.regs.f.zero = false;
@@ -267,9 +268,9 @@ pub(super) fn decode(opcode: u16, cpu: &mut CPU) -> usize {
             // LD HL,SP+i8 
             // Flags: 0 0 H C
             // Cycles: 12
-            let value = cpu.readu8() as i8;
+            let value = cpu.readu8(mmu) as i8;
             let sp: u16 = cpu.sp.into();
-            let (new_value, of) = sp.overflowing_add_signed(value as i16);
+            let (new_value, _) = sp.overflowing_add_signed(value as i16);
             cpu.regs.set_hl(new_value);
 
             cpu.regs.f.zero = false;
@@ -286,7 +287,7 @@ pub(super) fn decode(opcode: u16, cpu: &mut CPU) -> usize {
             // JR i8
             // Flags: - - - -
             // Cycles: 12
-            let jmp = cpu.readu8() as i8;
+            let jmp = cpu.readu8(mmu) as i8;
             let cur_pc: u16 = cpu.pc.into();
             let next_pc = cur_pc.wrapping_add_signed(jmp as i16);
             cpu.pc = next_pc.into();
@@ -298,7 +299,7 @@ pub(super) fn decode(opcode: u16, cpu: &mut CPU) -> usize {
             // Flags: - - - -
             // Cycles: 8/12(br taken)
             let condition = Condition::try_from(get_r(opcode as u8)).unwrap();
-            let jmp = cpu.readu8() as i8;
+            let jmp = cpu.readu8(mmu) as i8;
             if check_condition(cpu, condition) {
                 // branch taken
                 let cur_pc: u16 = cpu.pc.into();
@@ -315,7 +316,7 @@ pub(super) fn decode(opcode: u16, cpu: &mut CPU) -> usize {
             // JP u16
             // Flags: - - - -
             // Cycles: 16
-            let next_pc = cpu.readu16().into();
+            let next_pc = cpu.readu16(mmu).into();
             cpu.pc = next_pc;
             16
         }
@@ -324,7 +325,7 @@ pub(super) fn decode(opcode: u16, cpu: &mut CPU) -> usize {
             // Flags: - - - -
             // Cycles: 12/16(br taken)
             let condition = Condition::try_from(get_r(opcode as u8)).unwrap();
-            let next_pc = cpu.readu16().into();
+            let next_pc = cpu.readu16(mmu).into();
             if check_condition(cpu, condition) {
                 // branch taken
                 cpu.pc = next_pc;
@@ -347,8 +348,8 @@ pub(super) fn decode(opcode: u16, cpu: &mut CPU) -> usize {
             // CALL u16
             // Flags: - - - -
             // Cycles: 24
-            let next_pc = cpu.readu16();
-            cpu.push_stack(cpu.pc.into());
+            let next_pc = cpu.readu16(mmu);
+            cpu.push_stack(mmu, cpu.pc.into());
             cpu.pc = next_pc.into();
             24
         }
@@ -358,10 +359,10 @@ pub(super) fn decode(opcode: u16, cpu: &mut CPU) -> usize {
             // Flags: - - - -
             // Cycles: 12/24(br taken)
             let condition = Condition::try_from(get_r(opcode as u8)).unwrap();
-            let next_pc = cpu.readu16();
+            let next_pc = cpu.readu16(mmu);
             if check_condition(cpu, condition) {
                 // branch taken
-                cpu.push_stack(cpu.pc.into());
+                cpu.push_stack(mmu, cpu.pc.into());
                 cpu.pc = next_pc.into();
                 24
             } else {
@@ -374,7 +375,7 @@ pub(super) fn decode(opcode: u16, cpu: &mut CPU) -> usize {
             // RET
             // Flags: - - - -
             // Cycles: 16
-            let ret_pc = cpu.pop_stack();
+            let ret_pc = cpu.pop_stack(mmu);
             cpu.pc = ret_pc.into();
             16
         }
@@ -384,7 +385,7 @@ pub(super) fn decode(opcode: u16, cpu: &mut CPU) -> usize {
             // Flags: - - - -
             // Cycles: 16
             // todo!();
-            let ret_pc = cpu.pop_stack();
+            let ret_pc = cpu.pop_stack(mmu);
             cpu.pc = ret_pc.into();
             16
         }
@@ -395,7 +396,7 @@ pub(super) fn decode(opcode: u16, cpu: &mut CPU) -> usize {
             let condition = Condition::try_from(get_r(opcode as u8)).unwrap();
             if check_condition(cpu, condition) {
                 // branch taken
-                let ret_pc = cpu.pop_stack();
+                let ret_pc = cpu.pop_stack(mmu);
                 cpu.pc = ret_pc.into();
                 20
             } else {
@@ -409,7 +410,7 @@ pub(super) fn decode(opcode: u16, cpu: &mut CPU) -> usize {
             // Flags: - - - -
             // Cycles: 16
             let vec = get_y(opcode as u8) as u16;
-            cpu.push_stack(cpu.pc.into());
+            cpu.push_stack(mmu, cpu.pc.into());
             cpu.pc = vec.into();
             16
         }
@@ -432,10 +433,10 @@ pub(super) fn decode(opcode: u16, cpu: &mut CPU) -> usize {
             // Flags: Z 0 0 C/0  (0 for swap)
             // Cycles: 8/16(hl)
             let (target, is_hl) = get_r8_reg(get_z(opcode as u8));
-            let res = read_from_r8(cpu, target);
+            let res = read_from_r8(cpu, mmu, target);
             let operation = SrOp::try_from(get_y(opcode as u8)).unwrap();
             let (res, carry) = perform_sr8(cpu, operation, res);
-            write_to_r8(cpu, target, res); 
+            write_to_r8(cpu, mmu, target, res); 
             cpu.regs.f.zero = res == 0;
             cpu.regs.f.subtraction = false;
             cpu.regs.f.half_carry = false;
@@ -449,7 +450,7 @@ pub(super) fn decode(opcode: u16, cpu: &mut CPU) -> usize {
             // Flags Z 0 1 - 
             // Cycles: 8/12(hl)
             let (src, is_hl) = get_r8_reg(get_z(opcode as u8));
-            let res = read_from_r8(cpu, src);
+            let res = read_from_r8(cpu, mmu, src);
             let bit = get_y(opcode as u8);
             let res = get_nth_bit(res, bit);
             cpu.regs.f.zero = !res;
@@ -464,10 +465,10 @@ pub(super) fn decode(opcode: u16, cpu: &mut CPU) -> usize {
             // Flags: - - - - 
             // Cycles: 8/16(hl)
             let (target, is_hl) = get_r8_reg(get_z(opcode as u8));
-            let res = read_from_r8(cpu, target);
+            let res = read_from_r8(cpu, mmu, target);
             let bit = get_y(opcode as u8);
             let res = unset_nth_bit(res, bit);
-            write_to_r8(cpu, target, res);
+            write_to_r8(cpu, mmu, target, res);
             if is_hl { 16 } else { 8 }
         }
         0xcbc0..=0xcbff => {
@@ -476,10 +477,10 @@ pub(super) fn decode(opcode: u16, cpu: &mut CPU) -> usize {
             // Flags: - - - - 
             // Cycles: 8/16(hl)
             let (target, is_hl) = get_r8_reg(get_z(opcode as u8));
-            let res = read_from_r8(cpu, target);
+            let res = read_from_r8(cpu, mmu, target);
             let bit = get_y(opcode as u8);
             let res = set_nth_bit(res, bit);
-            write_to_r8(cpu, target, res);
+            write_to_r8(cpu, mmu, target, res);
             if is_hl { 16 } else { 8 }
         }
         _ => panic!("Unimplemented opcode: {:#x}", opcode),
@@ -527,7 +528,7 @@ fn get_r8_reg(oct: u8) -> (R8, bool) {
     (r8, is_hl)
 }
 
-fn read_from_r8(cpu: &mut CPU, src: R8) -> u8 {
+fn read_from_r8(cpu: &mut CPU, mmu: &MMU, src: R8) -> u8 {
     match src {
         R8::B => cpu.regs.get_b(),
         R8::C => cpu.regs.get_c(),
@@ -535,12 +536,12 @@ fn read_from_r8(cpu: &mut CPU, src: R8) -> u8 {
         R8::E => cpu.regs.get_e(),
         R8::H => cpu.regs.get_h(),
         R8::L => cpu.regs.get_l(),
-        R8::HL => cpu.mmu.readu8(cpu.regs.get_hl().into()),
+        R8::HL => mmu.readu8(cpu.regs.get_hl().into()),
         R8::A => cpu.regs.get_a(),
     }
 }
 
-fn write_to_r8(cpu: &mut CPU, dst: R8, v: u8) {
+fn write_to_r8(cpu: &mut CPU, mmu: &mut MMU, dst: R8, v: u8) {
     match dst {
         R8::B => cpu.regs.set_b(v),
         R8::C => cpu.regs.set_c(v),
@@ -548,7 +549,7 @@ fn write_to_r8(cpu: &mut CPU, dst: R8, v: u8) {
         R8::E => cpu.regs.set_e(v),
         R8::H => cpu.regs.set_h(v),
         R8::L => cpu.regs.set_l(v),
-        R8::HL => cpu.mmu.writeu8(cpu.regs.get_hl().into(), v),
+        R8::HL => mmu.writeu8(cpu.regs.get_hl().into(), v),
         R8::A => cpu.regs.set_a(v),
     }
 
@@ -640,14 +641,14 @@ fn get_addr_from_r16_group2(cpu: &mut CPU, opcode: u8) -> Addr {
     addr.into()
 }
 
-fn write_to_r16_group2(cpu: &mut CPU, opcode: u8, value: u8) {
+fn write_to_r16_group2(cpu: &mut CPU, mmu: &mut MMU, opcode: u8, value: u8) {
     let addr = get_addr_from_r16_group2(cpu, opcode);
-    cpu.mmu.writeu8(addr, value);
+    mmu.writeu8(addr, value);
 }
 
-fn read_from_r16_group2(cpu: &mut CPU, opcode: u8) -> u8 {
+fn read_from_r16_group2(cpu: &mut CPU, mmu: &MMU, opcode: u8) -> u8 {
     let addr = get_addr_from_r16_group2(cpu, opcode);
-    let val = cpu.mmu.readu8(addr);
+    let val = mmu.readu8(addr);
     // println!("yolo2 {:#x}", val);
     val
 }

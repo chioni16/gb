@@ -1,15 +1,70 @@
 #![feature(bigint_helper_methods)]
 
 mod cpu;
+mod mmu;
+mod ppu;
 
 use std::{path::Path, fs, io::Read};
+use std::{ops::{Add, AddAssign, Sub, SubAssign}, fmt::Display};
 
 use cpu::CPU;
+use mmu::MMU;
 
 // const DEBUG: bool = true;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub (crate) struct Addr(u16);
+impl Addr {
+    fn new() -> Self {
+        Self(0)
+    }
+}
+
+impl Add for Addr {
+    type Output = Addr;
+    fn add(self, rhs: Self) -> Self::Output {
+        Addr(self.0 + rhs.0)
+    }
+}
+
+impl Sub for Addr {
+    type Output = Addr;
+    fn sub(self, rhs: Self) -> Self::Output {
+        Addr(self.0 - rhs.0)
+    }
+}
+
+impl AddAssign for Addr {
+    fn add_assign(&mut self, rhs: Self) {
+        self.0 += rhs.0;
+    }
+}
+impl SubAssign for Addr {
+    fn sub_assign(&mut self, rhs: Self) {
+        self.0 -= rhs.0;        
+    }
+}
+impl From<u16> for Addr {
+    fn from(value: u16) -> Self {
+        Self(value)
+    }
+}
+
+impl From<Addr> for u16 {
+    fn from(value: Addr) -> Self {
+        value.0
+    }
+}
+
+impl Display for Addr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "{}", self.0)
+    }
+}
+
 pub struct Machine {
     cpu: CPU,
+    mmu: MMU,
 }
 
 impl Machine {
@@ -33,7 +88,8 @@ impl Machine {
         //     buf[0x134 + i] = v;
         // });
         let mut m = Self {
-            cpu: CPU::new(buf)
+            cpu: CPU::new(),
+            mmu: MMU::new(buf),
         };
         m.cpu.no_boot();
         Ok(m)
@@ -43,7 +99,7 @@ impl Machine {
             if cfg!(feature="debug") {
                 pause();
             }
-            self.cpu.step();
+            self.cpu.step(&mut self.mmu);
         }
     }
 }
