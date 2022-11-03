@@ -4,6 +4,9 @@ use std::fmt::Debug;
 
 type SResult<T> = Result<T, Box<dyn std::error::Error>>;
 
+const MIRROR_START: Addr = Addr::from(0xe000);
+const MIRROR_END  : Addr = Addr::from(0xfdff);
+
 // common interface to read and write from/to addresses
 pub(crate) trait BusIO: Debug {
     fn readu8(&self, addr: Addr) -> SResult<u8>;
@@ -35,10 +38,12 @@ impl BusIO for ROM {
         Ok(u16::from_le_bytes([self.0[addr as usize], self.0[addr as usize +1]]))
     }
     fn writeu8(&mut self, addr: Addr, _value: u8) -> SResult<()>{
-        panic!("write request for ROM, addr: {:#x?}", addr);
+        // panic!("write request for ROM, addr: {:#x?}", addr);
+        Ok(())
     }
     fn writeu16(&mut self, addr: Addr, _value: u16) -> SResult<()> {
-        panic!("write request for ROM, addr: {:#x?}", addr);
+        // panic!("write request for ROM, addr: {:#x?}", addr);
+        Ok(())
     }
     fn print_dbg(&self, _start: Addr, _len: u16) -> String {
         "".into()
@@ -173,7 +178,10 @@ impl MMU {
         unimplemented!()
     }
 
-    fn find_region(&self, addr: Addr) -> SResult<&Region> {
+    fn find_region(&self, mut addr: Addr) -> SResult<&Region> {
+        if MIRROR_START <= addr && addr <= MIRROR_END {
+            addr = addr - 0x2000u16.into();
+        }
         self.0.iter()
             .find(|(_, r)| r.start <= addr && addr <= r.end )
             .map(|(_, r)| r)
@@ -181,7 +189,10 @@ impl MMU {
             .ok_or(format!("Find Region: No mapping found for the address {:#x?}", addr).into())
     }
 
-    fn find_region_mut(&mut self, addr: Addr) -> SResult<&mut Region> {
+    fn find_region_mut(&mut self, mut addr: Addr) -> SResult<&mut Region> {
+        if MIRROR_START <= addr && addr <= MIRROR_END {
+            addr = addr - 0x2000u16.into();
+        }
         self.0.iter_mut()
             .find(|(_, r)| r.start <= addr && addr <= r.end )
             .map(|(_, r)| r)
@@ -204,12 +215,12 @@ impl MMU {
         region.writeu16(addr, value).unwrap()
     }
     pub(crate) fn writeu8(&mut self, addr: Addr, value: u8) {
-        if addr == 0xff01.into() {
-            // if self.readu8(0xff02.into()) == 0x81 {
-                eprintln!("{}", value as char);
-            // }
-            // return 
-        }
+        // if addr == 0xff01.into() {
+        //     // if self.readu8(0xff02.into()) == 0x81 {
+        //         // eprintln!("{}", value as char);
+        //     // }
+        //     // return 
+        // }
         let region = self.find_region_mut(addr).unwrap();
         region.writeu8(addr, value).unwrap()
     }

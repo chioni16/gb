@@ -1,4 +1,9 @@
+mod screen;
+
+use std::fmt::Display;
+
 use crate::{mmu::MMU, Addr};
+use screen::Screen;
 
 // https://forums.nesdev.org/viewtopic.php?f=20&t=17754&p=225009#p225009
 // http://blog.kevtris.org/blogfiles/Nitty%20Gritty%20Gameboy%20VRAM%20Timing.txt
@@ -25,19 +30,21 @@ enum PpuState {
 pub (crate) struct PPU {
     state: PpuState,
     ticks: usize,
-    line: u8,
+    screen: Screen,
 }
 
 impl PPU {
-    pub(crate) fn new() -> Self {
-        Self {
+    pub(crate) fn new(mmu: &mut MMU) -> Self {
+        let ppu = Self {
             state: PpuState::OAMSearch,
             ticks: 0,
-            line: 0,
-        }
+            screen: Screen::new(),
+        };
+        ppu.set_curr_scanline(mmu, 0);
+        ppu
     }
 
-    pub(crate) fn tick(&mut self, _mmu: &mut MMU, cpu_ticks: usize) {
+    pub(crate) fn tick(&mut self, mmu: &mut MMU, cpu_ticks: usize) {
         self.ticks += cpu_ticks;
 
         match self.state {
@@ -51,33 +58,86 @@ impl PPU {
                 if self.ticks >= 172 {
                     self.ticks -= 172;
                     self.state = PpuState::HBlank;
+
+                    self.renderscan(mmu);
                 }
             }
             PpuState::HBlank => {
                 if self.ticks >= 204 {
                     self.ticks -= 204;
-                    self.line += 1;
+                    self.incr_curr_scanline(mmu);
 
-                    if self.line < 144 {
+                    if self.get_curr_scanline(mmu) < 144 {
                         self.state = PpuState::OAMSearch;
                     } else {
-                        // TODO draw the line
+                        println!("{}", self.screen);
                         self.state = PpuState::VBlank;
                     }
-                    self.state = PpuState::HBlank;
                 }
             }
             PpuState::VBlank => {
                 if self.ticks >= 456 {
                     self.ticks -= 456;
-                    self.line += 1;
+                    self.incr_curr_scanline(mmu);
 
-                    if !(self.line < 154) {
+                    if !(self.get_curr_scanline(mmu) < 154) {
                         self.state = PpuState::OAMSearch;
-                        self.line = 0;
+                        self.set_curr_scanline(mmu, 0);
                     }
                 }
             }
+        }
+    }
+
+    fn renderscan(&mut self, mmu:&MMU) {
+        let py = self.get_curr_scanline(mmu);
+        let row_data: [[Colour; 8]; 20] = (0u8..20u8)
+            .map(|px| self.get_bg_tile_row(mmu, 8*px, py))
+            .collect::<Vec<[Colour; 8]>>()
+            .try_into()
+            .unwrap();
+
+        let row_data: [Colour; 160] = unsafe { std::mem::transmute(row_data) }; 
+        self.update_row(py, row_data);
+    }
+
+    fn get_bg_tile_row(&self, mmu: &MMU, px: u8, py: u8) -> [Colour; 8] {
+        // adjusting for viewport offsets
+        let px = px + self.get_scroll_x(mmu);
+        let py = py + self.get_scroll_y(mmu);
+
+        // get tile number
+        let ty = py >> 3; // py / 8
+        let tx = px >> 3; // px / 8
+        let to = (ty as u16) * 32u16 + tx as u16; // 32 = Number of tiles in a row = 256(number of pixels per row)/8(number of pixels per tile row)
+
+        // get tile index from the right tile map
+        let map: Addr = self.get_lcdc(mmu).bg_tile_map.into();
+        let ti = mmu.readu8(map + to.into());
+
+        // get the address where tile data is stored 
+        let ta = self.get_lcdc(mmu).bg_window_tile_data.get_tile_data_addr(ti);
+        // get the address where the row data is stored  
+        let ro = 2 * (py & 0b0000_0111) as u16; // 2 bytes per row * (py % 8)
+        let tra = ta + ro.into();
+
+        // read the row colour data
+        let lb = mmu.readu8(tra);
+        let hb = mmu.readu8(tra + 1.into());
+        (0u8..8u8)
+        .rev()
+        .map(|n| 
+            Colour::try_from(
+                ((get_nth_bit(hb, n) as u8) << 1) 
+                | get_nth_bit(lb, n) as u8
+            ).unwrap()
+        ).collect::<Vec<Colour>>()
+        .try_into()
+        .unwrap()
+    }
+    fn update_row(&mut self, row: u8, row_data: [Colour; 160]) {
+        for (i, c) in row_data.iter().enumerate() {
+            self.screen.set(row, i as u8, *c);
         }
     }
 }
@@ -123,6 +183,13 @@ impl PPU {
     fn get_curr_scanline(&self, mmu: &MMU) -> u8 {
         mmu.readu8(REG_CURR_SCANLINE)
     }
+    fn set_curr_scanline(&self, mmu: &mut MMU, value: u8) {
+        mmu.writeu8(REG_CURR_SCANLINE, value)
+    }
+    fn incr_curr_scanline(&self, mmu: &mut MMU) {
+        let curr_scanline = self.get_curr_scanline(mmu);
+        self.set_curr_scanline(mmu, curr_scanline + 1);
+    }
     fn set_bg_palette(&self, mmu: &mut MMU, value: Palette) {
         mmu.writeu8(REG_BG_PALETTE, value.into())
     }
@@ -164,21 +231,47 @@ impl From<bool> for TileMap {
     }
 }
 
-enum TileAddressing {
-    Low,  // 8000-8FFF, 0 - 255
-    High, // 8800-97FF, -128 - 127
-}
-
-impl From<TileAddressing> for bool {
-    fn from(value: TileAddressing) -> Self {
+impl From<TileMap> for Addr {
+    fn from(value: TileMap) -> Self {
         match value {
-            TileAddressing::Low  => true, 
-            TileAddressing::High => false,
+            TileMap::Low  => 0x9800.into(),
+            TileMap::High => 0x9c00.into(),
         }
     }
 }
 
-impl From<bool> for TileAddressing {
+enum TileData {
+    Low,  // 8000-8FFF, 0 - 255
+    High, // 8800-97FF, -128 - 127
+}
+
+impl TileData {
+    fn get_tile_data_addr(&self, tile_index: u8) -> Addr {
+        match self {
+            Self::Low  => {
+                let base = 0x8000u16;
+                let tile_index: i16 = 16 * tile_index as i16;
+                base.wrapping_add_signed(tile_index).into()
+            }
+            Self::High => {
+                let base = 0x9000u16;
+                let tile_index: i16 = 16 * (tile_index as i8) as i16;
+                base.wrapping_add_signed(tile_index).into()
+            }
+        }
+    }
+}
+
+impl From<TileData> for bool {
+    fn from(value: TileData) -> Self {
+        match value {
+            TileData::Low  => true, 
+            TileData::High => false,
+        }
+    }
+}
+
+impl From<bool> for TileData {
     fn from(value: bool) -> Self {
         match value {
             false => Self::High,
@@ -214,7 +307,7 @@ struct LCDC {
     ppu_enable: bool,
     window_tile_map: TileMap,
     window_enable: bool,
-    bg_window_tile_area: TileAddressing,
+    bg_window_tile_data: TileData,
     bg_tile_map: TileMap,
     object_size: ObjectSize,
     object_enable: bool,
@@ -227,7 +320,7 @@ impl From<u8> for LCDC {
             ppu_enable: get_nth_bit(value, 7),
             window_tile_map: get_nth_bit(value, 6).into(),
             window_enable: get_nth_bit(value, 5),
-            bg_window_tile_area: get_nth_bit(value, 4).into(),
+            bg_window_tile_data: get_nth_bit(value, 4).into(),
             bg_tile_map: get_nth_bit(value, 3).into(),
             object_size: get_nth_bit(value, 2).into(),
             object_enable: get_nth_bit(value, 1),
@@ -241,7 +334,7 @@ impl From<LCDC> for u8 {
         (((((((value.ppu_enable as u8) << 1
         | <TileMap as Into<bool>>::into(value.window_tile_map) as u8) << 1
         | value.window_enable as u8) << 1
-        | <TileAddressing as Into<bool>>::into(value.bg_window_tile_area) as u8) << 1
+        | <TileData as Into<bool>>::into(value.bg_window_tile_data) as u8) << 1
         | <TileMap as Into<bool>>::into(value.bg_tile_map) as u8) << 1
         | <ObjectSize as Into<bool>>::into(value.object_size) as u8) << 1
         | value.object_enable as u8) << 1
@@ -264,6 +357,18 @@ enum Colour {
     LightGrey = 1,
     DarkGrey  = 2,
     Black     = 3,
+}
+
+impl Display for Colour {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let c = match self {
+            Colour::White     => '█',
+            Colour::LightGrey => '▓',
+            Colour::DarkGrey  => '▒',
+            Colour::Black     => '░',
+        };
+        write!(f, "{}", c)
+    }
 }
 
 impl TryFrom<u8> for Colour {

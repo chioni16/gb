@@ -11,8 +11,6 @@ use cpu::CPU;
 use mmu::MMU;
 use ppu::PPU;
 
-// const DEBUG: bool = true;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub (crate) struct Addr(u16);
 impl Addr {
@@ -93,12 +91,18 @@ impl Machine {
         // checksum.into_iter().enumerate().for_each(|(i, v)| {
         //     buf[0x134 + i] = v;
         // });
+        let cpu =  CPU::new();
+        let mut mmu = MMU::new(buf);
+        let ppu = PPU::new(&mut mmu);
+
         let mut m = Self {
-            cpu: CPU::new(),
-            mmu: MMU::new(buf),
-            ppu: PPU::new(),
+            cpu,
+            mmu,
+            ppu,
         };
+
         m.cpu.no_boot();
+        
         Ok(m)
     }
     pub fn run(&mut self) {
