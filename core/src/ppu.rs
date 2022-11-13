@@ -28,6 +28,12 @@ const SCREEN_WIDTH_PIXELS:  u8 = 160;
 const SCREEN_HEIGHT_TILES:  u8 = SCREEN_HEIGHT_PIXELS / TILE_HEIGHT_PIXELS;
 const SCREEN_WIDTH_TILES:   u8 = SCREEN_WIDTH_PIXELS  / TILE_WIDTH_PIXELS;
 
+const TILEMAP_HEIGHT_PIXELS: u16 = 256;
+const TILEMAP_WIDTH_PIXELS:  u16 = 256;
+const TILEMAP_HEIGHT_TILES:  u16 = TILEMAP_HEIGHT_PIXELS / TILE_HEIGHT_PIXELS as u16;
+const TILEMAP_WIDTH_TILES:   u16 = TILEMAP_WIDTH_PIXELS  / TILE_WIDTH_PIXELS as u16;
+
+// pseudo-scanlines
 const VBLANK_LINES:         u8 = 10;
 
 const TICKS_OAM_SEARCH:     u64 = 80;
@@ -36,6 +42,9 @@ const TICKS_HBLANK:         u64 = 204;
 const TICKS_ONE_LINE:       u64 = TICKS_OAM_SEARCH + TICKS_PIXEL_TRANSFER + TICKS_HBLANK;
 const TICKS_VBLANK:         u64 = VBLANK_LINES as u64 * TICKS_ONE_LINE;              
 const TICKS_ONE_FRAME:      u64 = SCREEN_HEIGHT_PIXELS as u64 * TICKS_ONE_LINE + TICKS_VBLANK;
+
+type ColourScreenRow = [Colour; SCREEN_WIDTH_PIXELS as usize];
+type ColourTileRow   = [Colour; TILE_WIDTH_PIXELS as usize];
 
 #[repr(u8)]
 enum PpuState {
@@ -52,8 +61,6 @@ pub (crate) struct PPU {
 }
 
 impl PPU {
-
-
     pub(crate) fn new(mmu: &mut MMU) -> Self {
         let ppu = Self {
             state: PpuState::OAMSearch,
@@ -111,25 +118,36 @@ impl PPU {
 
     fn renderscan(&mut self, mmu:&MMU) {
         let py = self.get_curr_scanline(mmu);
-        let row_data: [[Colour; 8]; 20] = (0u8..20u8)
-            .map(|px| self.get_bg_tile_row(mmu, 8*px, py))
-            .collect::<Vec<[Colour; 8]>>()
+        let row_data: [ColourTileRow; SCREEN_WIDTH_TILES as usize] 
+            = (0..SCREEN_WIDTH_TILES)
+            .map(|tx| self.get_bg_tile_row(mmu, TILE_WIDTH_PIXELS*tx, py))
+            .collect::<Vec<_>>()
             .try_into()
             .unwrap();
 
-        let row_data: [Colour; 160] = unsafe { std::mem::transmute(row_data) }; 
+        let row_data: ColourScreenRow = unsafe { std::mem::transmute(row_data) }; 
         self.update_row(py, row_data);
     }
 
-    fn get_bg_tile_row(&self, mmu: &MMU, px: u8, py: u8) -> [Colour; 8] {
+    fn get_bg_tile_row(&self, mmu: &MMU, px: u8, py: u8) -> ColourTileRow {
+        let (spx, spy) = self.adjust_viewport_scroll(mmu, px, py);
+        let tra = self.get_tile_row_data_addr(mmu, spx, spy);
+        self.get_tile_row_data(mmu, tra)
+    }
+
+    fn adjust_viewport_scroll(&self, mmu: &MMU, px: u8, py: u8) -> (u8, u8) {
         // adjusting for viewport offsets
         let px = px + self.get_scroll_x(mmu);
         let py = py + self.get_scroll_y(mmu);
+        (px, py)
+    }
 
+    fn get_tile_data_addr(&self, mmu: &MMU, spx: u8, spy: u8) -> Addr {
         // get tile number
-        let ty = py >> 3; // py / 8
-        let tx = px >> 3; // px / 8
-        let to = (ty as u16) * 32u16 + tx as u16; // 32 = Number of tiles in a row = 256(number of pixels per row)/8(number of pixels per tile row)
+        let ty = spy >> 3; // py / 8
+        let tx = spx >> 3; // px / 8
+        // type conversion for individual variables instead of type conversion at the end - in order to avoid overflow
+        let to = (ty as u16) * TILEMAP_WIDTH_TILES + tx as u16; // 32 = Number of tiles in a row = 256(number of pixels per row)/8(number of pixels per tile row)
 
         // get tile index from the right tile map
         let map: Addr = self.get_lcdc(mmu).bg_tile_map.into();
@@ -137,14 +155,23 @@ impl PPU {
 
         // get the address where tile data is stored 
         let ta = self.get_lcdc(mmu).bg_window_tile_data.get_tile_data_addr(ti);
-        // get the address where the row data is stored  
-        let ro = 2 * (py & 0b0000_0111) as u16; // 2 bytes per row * (py % 8)
-        let tra = ta + ro.into();
+        ta
+    }
 
+    fn get_tile_row_data_addr(&self, mmu: &MMU, spx: u8, spy: u8) -> Addr {
+        let ta = self.get_tile_data_addr(mmu, spx, spy);
+
+        // get the address where the row data is stored  
+        let ro = 2 * (spy % TILE_HEIGHT_PIXELS) as u16; // 2 bytes per row * (py % 8)
+        let tra = ta + ro.into();
+        tra
+    }
+
+    fn get_tile_row_data(&self, mmu: &MMU, tra: Addr) -> ColourTileRow {
         // read the row colour data
         let lb = mmu.readu8(tra);
         let hb = mmu.readu8(tra + 1.into());
-        (0u8..8u8)
+        (0..TILE_WIDTH_PIXELS)
         .rev()
         .map(|n| 
             Colour::try_from(
@@ -155,7 +182,8 @@ impl PPU {
         .try_into()
         .unwrap()
     }
-    fn update_row(&mut self, row: u8, row_data: [Colour; 160]) {
+
+    fn update_row(&mut self, row: u8, row_data: ColourScreenRow) {
         for (i, c) in row_data.iter().enumerate() {
             self.screen.set(row, i as u8, *c);
         }
