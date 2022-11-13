@@ -8,6 +8,7 @@ use screen::Screen;
 // https://forums.nesdev.org/viewtopic.php?f=20&t=17754&p=225009#p225009
 // http://blog.kevtris.org/blogfiles/Nitty%20Gritty%20Gameboy%20VRAM%20Timing.txt
 // http://imrannazar.com/GameBoy-Emulation-in-JavaScript:-GPU-Timings
+// https://pixelbits.16-b.it/GBEDG/ppu/
 
 // ===================================================================================
 // Period	                    GPU mode number	            Time spent (clocks)
@@ -19,6 +20,23 @@ use screen::Screen;
 // Vertical blank	                1	                        4560 (10 lines)
 // Full frame (scans and vblank)		                            70224
 
+const TILE_WIDTH_PIXELS:    u8 = 8;
+const TILE_HEIGHT_PIXELS:   u8 = 8;
+
+const SCREEN_HEIGHT_PIXELS: u8 = 144;
+const SCREEN_WIDTH_PIXELS:  u8 = 160;
+const SCREEN_HEIGHT_TILES:  u8 = SCREEN_HEIGHT_PIXELS / TILE_HEIGHT_PIXELS;
+const SCREEN_WIDTH_TILES:   u8 = SCREEN_WIDTH_PIXELS  / TILE_WIDTH_PIXELS;
+
+const VBLANK_LINES:         u8 = 10;
+
+const TICKS_OAM_SEARCH:     u64 = 80;
+const TICKS_PIXEL_TRANSFER: u64 = 172;
+const TICKS_HBLANK:         u64 = 204;
+const TICKS_ONE_LINE:       u64 = TICKS_OAM_SEARCH + TICKS_PIXEL_TRANSFER + TICKS_HBLANK;
+const TICKS_VBLANK:         u64 = VBLANK_LINES as u64 * TICKS_ONE_LINE;              
+const TICKS_ONE_FRAME:      u64 = SCREEN_HEIGHT_PIXELS as u64 * TICKS_ONE_LINE + TICKS_VBLANK;
+
 #[repr(u8)]
 enum PpuState {
     OAMSearch = 2,
@@ -29,11 +47,13 @@ enum PpuState {
 
 pub (crate) struct PPU {
     state: PpuState,
-    ticks: usize,
+    ticks: u64,
     screen: Screen,
 }
 
 impl PPU {
+
+
     pub(crate) fn new(mmu: &mut MMU) -> Self {
         let ppu = Self {
             state: PpuState::OAMSearch,
@@ -44,30 +64,30 @@ impl PPU {
         ppu
     }
 
-    pub(crate) fn tick(&mut self, mmu: &mut MMU, cpu_ticks: usize) {
+    pub(crate) fn tick(&mut self, mmu: &mut MMU, cpu_ticks: u64) {
         self.ticks += cpu_ticks;
 
         match self.state {
             PpuState::OAMSearch => {
-                if self.ticks >= 80 {
-                    self.ticks -= 80;
+                if self.ticks >= TICKS_OAM_SEARCH {
+                    self.ticks -= TICKS_OAM_SEARCH;
                     self.state = PpuState::PixelTransfer;
                 }
             }
             PpuState::PixelTransfer => {
-                if self.ticks >= 172 {
-                    self.ticks -= 172;
+                if self.ticks >= TICKS_PIXEL_TRANSFER {
+                    self.ticks -= TICKS_PIXEL_TRANSFER;
                     self.state = PpuState::HBlank;
 
                     self.renderscan(mmu);
                 }
             }
             PpuState::HBlank => {
-                if self.ticks >= 204 {
-                    self.ticks -= 204;
+                if self.ticks >= TICKS_HBLANK {
+                    self.ticks -= TICKS_HBLANK;
                     self.incr_curr_scanline(mmu);
 
-                    if self.get_curr_scanline(mmu) < 144 {
+                    if self.get_curr_scanline(mmu) < SCREEN_HEIGHT_PIXELS {
                         self.state = PpuState::OAMSearch;
                     } else {
                         println!("{}", self.screen);
@@ -76,11 +96,11 @@ impl PPU {
                 }
             }
             PpuState::VBlank => {
-                if self.ticks >= 456 {
-                    self.ticks -= 456;
+                if self.ticks >= TICKS_ONE_LINE {
+                    self.ticks -= TICKS_ONE_LINE;
                     self.incr_curr_scanline(mmu);
 
-                    if !(self.get_curr_scanline(mmu) < 154) {
+                    if !(self.get_curr_scanline(mmu) < SCREEN_HEIGHT_PIXELS + VBLANK_LINES) {
                         self.state = PpuState::OAMSearch;
                         self.set_curr_scanline(mmu, 0);
                     }

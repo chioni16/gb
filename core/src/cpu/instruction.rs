@@ -1,7 +1,7 @@
 use super::{CPU, Addr};
 use crate::mmu::MMU;
 
-pub(super) fn decode(opcode: u16, cpu: &mut CPU, mmu: &mut MMU) -> usize {
+pub(super) fn decode(opcode: u16, cpu: &mut CPU, mmu: &mut MMU) -> u64 {
     // println!("{:#x}", opcode);
     match opcode {
         0x0000 => {
