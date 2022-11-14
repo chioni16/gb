@@ -1,4 +1,4 @@
-use super::{CPU, Addr};
+use super::{CPU, Addr, IMEState};
 use crate::mmu::MMU;
 
 pub(super) fn decode(opcode: u16, cpu: &mut CPU, mmu: &mut MMU) -> u64 {
@@ -18,10 +18,12 @@ pub(super) fn decode(opcode: u16, cpu: &mut CPU, mmu: &mut MMU) -> u64 {
         }
         0x00f3 => {
             /*DI*/
+            cpu.ime = IMEState::Disabled;
             4
         }
         0x00fb => {
             /*EI*/
+            cpu.ime = IMEState::Intermediate1;
             4
         }
         
@@ -385,6 +387,7 @@ pub(super) fn decode(opcode: u16, cpu: &mut CPU, mmu: &mut MMU) -> u64 {
             // Flags: - - - -
             // Cycles: 16
             // todo!();
+            cpu.ime = IMEState::Enabled;
             let ret_pc = cpu.pop_stack(mmu);
             cpu.pc = ret_pc.into();
             16
@@ -409,7 +412,7 @@ pub(super) fn decode(opcode: u16, cpu: &mut CPU, mmu: &mut MMU) -> u64 {
             // RST
             // Flags: - - - -
             // Cycles: 16
-            let vec = get_y(opcode as u8) as u16;
+            let vec = (get_y(opcode as u8) << 3) as u16;
             cpu.push_stack(mmu, cpu.pc.into());
             cpu.pc = vec.into();
             16
