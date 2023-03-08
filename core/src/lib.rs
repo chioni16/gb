@@ -3,13 +3,18 @@
 mod cpu;
 mod mmu;
 mod ppu;
+mod timer;
 
 use std::{path::Path, fs, io::Read};
 use std::{ops::{Add, AddAssign, Sub, SubAssign}, fmt::Display};
 
 use cpu::CPU;
+use eframe::egui;
 use mmu::MMU;
 use ppu::PPU;
+use timer::Timer;
+
+static mut DIVIDER_WRITE: bool = false;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub (crate) struct Addr(u16);
@@ -69,6 +74,7 @@ pub struct Machine {
     cpu: CPU,
     mmu: MMU,
     ppu: PPU,
+    timer: Timer,
 }
 
 impl Machine {
@@ -94,24 +100,32 @@ impl Machine {
         let cpu =  CPU::new();
         let mut mmu = MMU::new(buf);
         let ppu = PPU::new(&mut mmu);
+        let timer = Timer::new();
 
         let mut m = Self {
             cpu,
             mmu,
             ppu,
+            timer,
         };
 
         m.cpu.no_boot();
         
         Ok(m)
     }
+
+    pub fn step(&mut self) {
+        let cpu_ticks = self.cpu.step(&mut self.mmu);
+        // self.ppu.tick(&mut self.mmu, cpu_ticks);
+        self.timer.tick(&mut self.mmu, cpu_ticks as u16);
+    }
+
     pub fn run(&mut self) {
         loop {
             if cfg!(feature="debug") {
                 pause();
             }
-            let cpu_ticks = self.cpu.step(&mut self.mmu);
-            self.ppu.tick(&mut self.mmu, cpu_ticks);
+            self.step();
         }
     }
 }
@@ -129,4 +143,14 @@ fn pause() {
 
     // Read a single byte and discard
     let _ = stdin.read(&mut [0u8]).unwrap();
+}
+
+
+impl eframe::App for Machine {
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        egui::CentralPanel::default().show(ctx, |ui| {
+            ui.heading("GB");
+            self.step();
+        });
+    }
 }

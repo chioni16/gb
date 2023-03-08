@@ -73,6 +73,12 @@ pub(super) fn decode(opcode: u16, cpu: &mut CPU, mmu: &mut MMU) -> u64 {
             let value = cpu.regs.get_a();
             let addr = (0xff00 + cpu.readu8(mmu) as u16).into();
             mmu.writeu8(addr, value);
+            // if cpu.pc > 0xc2bd.into() {
+            //     if addr == 0xff0f.into() {
+            //         eprintln!("e0: {:#x?} {}", addr, value);
+            //         eprintln!("stack {:#x?} {:#x}", cpu.sp, mmu.readu16(cpu.sp));
+            //     }
+            // }
             12
         }
         0x00e2 => {
@@ -424,7 +430,7 @@ pub(super) fn decode(opcode: u16, cpu: &mut CPU, mmu: &mut MMU) -> u64 {
         0x0007 | 0x0017 | 0x0027 | 0x0037 | 0x000f | 0x001f | 0x002f | 0x003f => {
             let operation = AccFlagOp::try_from(get_y(opcode as u8)).unwrap();
             perform_acc_flag(cpu, operation);
-            // todo!()
+            // todo!();
             4
         }
 

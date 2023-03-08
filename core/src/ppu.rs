@@ -67,7 +67,7 @@ impl PPU {
             ticks: 0,
             screen: Screen::new(),
         };
-        ppu.set_curr_scanline(mmu, 0);
+        // ppu.set_curr_scanline(mmu, 0);
         ppu
     }
 
