@@ -1,4 +1,4 @@
-use super::{CPU, Addr, IMEState};
+use super::{Addr, IMEState, CPU};
 use crate::mmu::MMU;
 
 pub(super) fn decode(opcode: u16, cpu: &mut CPU, mmu: &mut MMU) -> u64 {
@@ -26,8 +26,7 @@ pub(super) fn decode(opcode: u16, cpu: &mut CPU, mmu: &mut MMU) -> u64 {
             cpu.ime = IMEState::Intermediate1;
             4
         }
-        
-        
+
         //////////////////    x8/lsm           ////////////////////////
         0x0002 | 0x0012 | 0x0022 | 0x0032 => {
             // LD [R16G2] A
@@ -36,7 +35,7 @@ pub(super) fn decode(opcode: u16, cpu: &mut CPU, mmu: &mut MMU) -> u64 {
             write_to_r16_group2(cpu, mmu, opcode as u8, cpu.regs.get_a());
             8
         }
-        
+
         0x000a | 0x001a | 0x002a | 0x003a => {
             // LD A [R16G2]
             // Flags: - - - -
@@ -45,7 +44,7 @@ pub(super) fn decode(opcode: u16, cpu: &mut CPU, mmu: &mut MMU) -> u64 {
             cpu.regs.set_a(v);
             8
         }
-        
+
         0x0006 | 0x0016 | 0x0026 | 0x0036 | 0x000e | 0x001e | 0x002e | 0x003e => {
             // LD r8 [u8]
             // Flags: - - - -
@@ -53,18 +52,26 @@ pub(super) fn decode(opcode: u16, cpu: &mut CPU, mmu: &mut MMU) -> u64 {
             let v = cpu.readu8(mmu);
             let (dst, is_hl) = get_r8_reg(get_y(opcode as u8));
             write_to_r8(cpu, mmu, dst, v);
-            if is_hl { 12 } else { 8 }
+            if is_hl {
+                12
+            } else {
+                8
+            }
         }
-        
+
         0x0040..=0x0075 | 0x0077..=0x007f => {
             // LD r8 r8
-            // Flags: - - - - 
+            // Flags: - - - -
             // Cycles: 4/8(hl)
             let (src, is_hl_src) = get_r8_reg(get_z(opcode as u8));
             let v = read_from_r8(cpu, mmu, src);
             let (dst, is_hl_dst) = get_r8_reg(get_y(opcode as u8));
             write_to_r8(cpu, mmu, dst, v);
-            if is_hl_src || is_hl_dst { 8 } else { 4 }
+            if is_hl_src || is_hl_dst {
+                8
+            } else {
+                4
+            }
         }
         // load from A
         // Flags: - - - -
@@ -137,7 +144,7 @@ pub(super) fn decode(opcode: u16, cpu: &mut CPU, mmu: &mut MMU) -> u64 {
             mmu.writeu16(target, value);
             20
         }
-        
+
         0x00c1 | 0x00d1 | 0x00e1 | 0x00f1 => {
             // POP r16g3
             // Flags: - - - - (except POP AF, but no explicit changes done to flags)
@@ -149,7 +156,7 @@ pub(super) fn decode(opcode: u16, cpu: &mut CPU, mmu: &mut MMU) -> u64 {
         }
         0x00c5 | 0x00d5 | 0x00e5 | 0x00f5 => {
             // PUSH r16g3
-            // Flags: - - - - 
+            // Flags: - - - -
             // Cycles: 16
             let src = R16G3::try_from(get_p(opcode as u8)).unwrap();
             let val = read_from_r16_group3(cpu, src);
@@ -175,11 +182,15 @@ pub(super) fn decode(opcode: u16, cpu: &mut CPU, mmu: &mut MMU) -> u64 {
             let value = read_from_r8(cpu, mmu, target);
             let new_value = value + 1;
             write_to_r8(cpu, mmu, target, new_value);
-            cpu.regs.f.zero =  new_value == 0;
+            cpu.regs.f.zero = new_value == 0;
             cpu.regs.f.subtraction = false;
             // eprintln!("INC: {}, {}, {}", v, 1, bit_3_overflow(v, 1));
             cpu.regs.f.half_carry = bit_3_overflow(value, 1);
-            if is_hl { 12 } else { 4 }
+            if is_hl {
+                12
+            } else {
+                4
+            }
         }
         0x0005 | 0x0015 | 0x0025 | 0x0035 | 0x000d | 0x001d | 0x002d | 0x003d => {
             // DEC r8
@@ -192,7 +203,11 @@ pub(super) fn decode(opcode: u16, cpu: &mut CPU, mmu: &mut MMU) -> u64 {
             cpu.regs.f.zero = new_value == 0;
             cpu.regs.f.subtraction = true;
             cpu.regs.f.half_carry = bit_4_borrow(value, 1);
-            if is_hl { 12 } else { 4 }
+            if is_hl {
+                12
+            } else {
+                4
+            }
         }
         0x0080..=0x00bf => {
             // ALU A r8
@@ -202,7 +217,11 @@ pub(super) fn decode(opcode: u16, cpu: &mut CPU, mmu: &mut MMU) -> u64 {
             let op2 = read_from_r8(cpu, mmu, src);
             let operation = AluOp::try_from(get_y(opcode as u8)).unwrap();
             perform_alu8(cpu, operation, op2);
-            if is_hl { 8 } else { 4 }
+            if is_hl {
+                8
+            } else {
+                4
+            }
         }
 
         0x00c6 | 0x00d6 | 0x00e6 | 0x00f6 | 0x00ce | 0x00de | 0x00ee | 0x00fe => {
@@ -218,20 +237,19 @@ pub(super) fn decode(opcode: u16, cpu: &mut CPU, mmu: &mut MMU) -> u64 {
         /////////////////     x8/alu          /////////////////////////
 
         /////////////////     x16/alu          /////////////////////////
-        
         0x0003 | 0x0013 | 0x0023 | 0x0033 => {
             // INC R16G1
-            // Flags: - - - - 
+            // Flags: - - - -
             // Cycles: 8
             let reg = R16G1::try_from(get_p(opcode as u8)).unwrap();
             let val = read_from_r16_group1(cpu, reg);
-            write_to_r16_group1(cpu, reg, val+1);
+            write_to_r16_group1(cpu, reg, val + 1);
             8
         }
 
         0x0009 | 0x0019 | 0x0029 | 0x0039 => {
             // ADD HL R16G1
-            // Flags: - 0 H C 
+            // Flags: - 0 H C
             // Cycles: 8
             let dst = R16G1::HL;
             let src = R16G1::try_from(get_p(opcode as u8)).unwrap();
@@ -247,11 +265,11 @@ pub(super) fn decode(opcode: u16, cpu: &mut CPU, mmu: &mut MMU) -> u64 {
 
         0x000b | 0x001b | 0x002b | 0x003b => {
             // DEC R16G1
-            // Flags: - - - - 
+            // Flags: - - - -
             // Cycles: 8
             let reg = R16G1::try_from(get_p(opcode as u8)).unwrap();
             let val = read_from_r16_group1(cpu, reg);
-            write_to_r16_group1(cpu, reg, val-1);
+            write_to_r16_group1(cpu, reg, val - 1);
             8
         }
 
@@ -273,7 +291,7 @@ pub(super) fn decode(opcode: u16, cpu: &mut CPU, mmu: &mut MMU) -> u64 {
         }
 
         0x00f8 => {
-            // LD HL,SP+i8 
+            // LD HL,SP+i8
             // Flags: 0 0 H C
             // Cycles: 12
             let value = cpu.readu8(mmu) as i8;
@@ -289,7 +307,7 @@ pub(super) fn decode(opcode: u16, cpu: &mut CPU, mmu: &mut MMU) -> u64 {
             12
         }
         /////////////////     x16/alu          /////////////////////////
-        
+
         /////////////////     control/br      /////////////////////////
         0x0018 => {
             // JR i8
@@ -425,8 +443,6 @@ pub(super) fn decode(opcode: u16, cpu: &mut CPU, mmu: &mut MMU) -> u64 {
         }
 
         /////////////////     control/br      /////////////////////////
-        
-
         0x0007 | 0x0017 | 0x0027 | 0x0037 | 0x000f | 0x001f | 0x002f | 0x003f => {
             let operation = AccFlagOp::try_from(get_y(opcode as u8)).unwrap();
             perform_acc_flag(cpu, operation);
@@ -435,7 +451,6 @@ pub(super) fn decode(opcode: u16, cpu: &mut CPU, mmu: &mut MMU) -> u64 {
         }
 
         // cbprefixed
-
         0xcb00..=0xcb3f => {
             // 00 opcode(group 3) r8
             //                  y  z
@@ -445,18 +460,22 @@ pub(super) fn decode(opcode: u16, cpu: &mut CPU, mmu: &mut MMU) -> u64 {
             let res = read_from_r8(cpu, mmu, target);
             let operation = SrOp::try_from(get_y(opcode as u8)).unwrap();
             let (res, carry) = perform_sr8(cpu, operation, res);
-            write_to_r8(cpu, mmu, target, res); 
+            write_to_r8(cpu, mmu, target, res);
             cpu.regs.f.zero = res == 0;
             cpu.regs.f.subtraction = false;
             cpu.regs.f.half_carry = false;
             cpu.regs.f.carry = carry;
-            if is_hl { 16 } else { 8 }
+            if is_hl {
+                16
+            } else {
+                8
+            }
         }
 
         0xcb40..=0xcb7f => {
             // BIT bit, r8
             //  01   y   z
-            // Flags Z 0 1 - 
+            // Flags Z 0 1 -
             // Cycles: 8/12(hl)
             let (src, is_hl) = get_r8_reg(get_z(opcode as u8));
             let res = read_from_r8(cpu, mmu, src);
@@ -465,32 +484,44 @@ pub(super) fn decode(opcode: u16, cpu: &mut CPU, mmu: &mut MMU) -> u64 {
             cpu.regs.f.zero = !res;
             cpu.regs.f.subtraction = false;
             cpu.regs.f.half_carry = true;
-            if is_hl { 12 } else { 8 }
+            if is_hl {
+                12
+            } else {
+                8
+            }
         }
-        
+
         0xcb80..=0xcbbf => {
             // RES bit, r8
             //  10   y   z
-            // Flags: - - - - 
+            // Flags: - - - -
             // Cycles: 8/16(hl)
             let (target, is_hl) = get_r8_reg(get_z(opcode as u8));
             let res = read_from_r8(cpu, mmu, target);
             let bit = get_y(opcode as u8);
             let res = unset_nth_bit(res, bit);
             write_to_r8(cpu, mmu, target, res);
-            if is_hl { 16 } else { 8 }
+            if is_hl {
+                16
+            } else {
+                8
+            }
         }
         0xcbc0..=0xcbff => {
             // SET bit, r8
             //  11   y   z
-            // Flags: - - - - 
+            // Flags: - - - -
             // Cycles: 8/16(hl)
             let (target, is_hl) = get_r8_reg(get_z(opcode as u8));
             let res = read_from_r8(cpu, mmu, target);
             let bit = get_y(opcode as u8);
             let res = set_nth_bit(res, bit);
             write_to_r8(cpu, mmu, target, res);
-            if is_hl { 16 } else { 8 }
+            if is_hl {
+                16
+            } else {
+                8
+            }
         }
         _ => panic!("Unimplemented opcode: {:#x}", opcode),
     }
@@ -531,8 +562,8 @@ fn get_r8_reg(oct: u8) -> (R8, bool) {
     assert!(oct < 8);
     let r8 = R8::try_from(oct).unwrap();
     let is_hl = match r8 {
-        R8::HL => true, 
-        _      => false,
+        R8::HL => true,
+        _ => false,
     };
     (r8, is_hl)
 }
@@ -561,7 +592,6 @@ fn write_to_r8(cpu: &mut CPU, mmu: &mut MMU, dst: R8, v: u8) {
         R8::HL => mmu.writeu8(cpu.regs.get_hl().into(), v),
         R8::A => cpu.regs.set_a(v),
     }
-
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -712,20 +742,20 @@ enum AluOp {
     SBC = 3,
     AND = 4,
     XOR = 5,
-    OR  = 6,
-    CP  = 7,
+    OR = 6,
+    CP = 7,
 }
 
 impl TryFrom<u8> for AluOp {
     type Error = ();
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         let r = match value {
-            0 => AluOp::ADD, 
-            1 => AluOp::ADC, 
+            0 => AluOp::ADD,
+            1 => AluOp::ADC,
             2 => AluOp::SUB,
             3 => AluOp::SBC,
             4 => AluOp::AND,
-            5 => AluOp::XOR, 
+            5 => AluOp::XOR,
             6 => AluOp::OR,
             7 => AluOp::CP,
             _ => return Err(()),
@@ -738,7 +768,7 @@ fn perform_alu8(cpu: &mut CPU, operation: AluOp, op2: u8) {
     let a = cpu.regs.get_a();
     match operation {
         AluOp::ADD => {
-            // Flags: Z 0 H C 
+            // Flags: Z 0 H C
             let (res, of) = a.overflowing_add(op2);
             cpu.regs.f.zero = res == 0;
             cpu.regs.f.subtraction = false;
@@ -747,16 +777,17 @@ fn perform_alu8(cpu: &mut CPU, operation: AluOp, op2: u8) {
             cpu.regs.set_a(res);
         }
         AluOp::ADC => {
-            // Flags: Z 0 H C 
+            // Flags: Z 0 H C
             let (res, of) = a.carrying_add(op2, cpu.regs.f.carry);
             cpu.regs.f.zero = res == 0;
             cpu.regs.f.subtraction = false;
-            cpu.regs.f.half_carry = bit_3_overflow(a, op2) || bit_3_overflow(a+op2, cpu.regs.f.carry as u8);
+            cpu.regs.f.half_carry =
+                bit_3_overflow(a, op2) || bit_3_overflow(a + op2, cpu.regs.f.carry as u8);
             cpu.regs.f.carry = of;
             cpu.regs.set_a(res);
         }
         AluOp::SUB => {
-            // Flags: Z 1 H C 
+            // Flags: Z 1 H C
             let (res, of) = a.overflowing_sub(op2);
             cpu.regs.f.zero = res == 0;
             cpu.regs.f.subtraction = true;
@@ -765,16 +796,17 @@ fn perform_alu8(cpu: &mut CPU, operation: AluOp, op2: u8) {
             cpu.regs.set_a(res);
         }
         AluOp::SBC => {
-            // Flags: Z 1 H C 
+            // Flags: Z 1 H C
             let (res, of) = a.borrowing_sub(op2, cpu.regs.f.carry);
             cpu.regs.f.zero = res == 0;
             cpu.regs.f.subtraction = true;
-            cpu.regs.f.half_carry = bit_4_borrow(a, op2) || bit_4_borrow(a-op2, cpu.regs.f.carry as u8);
+            cpu.regs.f.half_carry =
+                bit_4_borrow(a, op2) || bit_4_borrow(a - op2, cpu.regs.f.carry as u8);
             cpu.regs.f.carry = of;
             cpu.regs.set_a(res);
         }
         AluOp::AND => {
-            // Flags: Z 0 1 0 
+            // Flags: Z 0 1 0
             let res = a & op2;
             cpu.regs.f.zero = res == 0;
             cpu.regs.f.subtraction = false;
@@ -783,7 +815,7 @@ fn perform_alu8(cpu: &mut CPU, operation: AluOp, op2: u8) {
             cpu.regs.set_a(res);
         }
         AluOp::XOR => {
-            // Flags: Z 0 0 0 
+            // Flags: Z 0 0 0
             let res = a ^ op2;
             cpu.regs.f.zero = res == 0;
             cpu.regs.f.subtraction = false;
@@ -792,7 +824,7 @@ fn perform_alu8(cpu: &mut CPU, operation: AluOp, op2: u8) {
             cpu.regs.set_a(res);
         }
         AluOp::OR => {
-            // Flags: Z 0 0 0 
+            // Flags: Z 0 0 0
             let res = a | op2;
             cpu.regs.f.zero = res == 0;
             cpu.regs.f.subtraction = false;
@@ -801,7 +833,7 @@ fn perform_alu8(cpu: &mut CPU, operation: AluOp, op2: u8) {
             cpu.regs.set_a(res);
         }
         AluOp::CP => {
-            // Flags: Z 1 H C 
+            // Flags: Z 1 H C
             let (res, of) = a.overflowing_sub(op2);
             cpu.regs.f.zero = res == 0;
             cpu.regs.f.subtraction = true;
@@ -814,25 +846,25 @@ fn perform_alu8(cpu: &mut CPU, operation: AluOp, op2: u8) {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(u8)]
 enum SrOp {
-    RLC  = 0,
-    RRC  = 1,
-    RL   = 2,
-    RR   = 3,
-    SLA  = 4,
-    SRA  = 5,
+    RLC = 0,
+    RRC = 1,
+    RL = 2,
+    RR = 3,
+    SLA = 4,
+    SRA = 5,
     SWAP = 6,
-    SRL  = 7,
+    SRL = 7,
 }
 impl TryFrom<u8> for SrOp {
     type Error = ();
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         let r = match value {
-            0 => SrOp::RLC, 
-            1 => SrOp::RRC, 
+            0 => SrOp::RLC,
+            1 => SrOp::RRC,
             2 => SrOp::RL,
             3 => SrOp::RR,
             4 => SrOp::SLA,
-            5 => SrOp::SRA, 
+            5 => SrOp::SRA,
             6 => SrOp::SWAP,
             7 => SrOp::SRL,
             _ => return Err(()),
@@ -844,21 +876,30 @@ impl TryFrom<u8> for SrOp {
 fn perform_sr8(cpu: &mut CPU, operation: SrOp, value: u8) -> (u8, bool) {
     match operation {
         // Flags: Z 0 0 C
-        SrOp::RLC  => (value.rotate_left(1), get_nth_bit(value, 7)),
+        SrOp::RLC => (value.rotate_left(1), get_nth_bit(value, 7)),
         // Flags: Z 0 0 C
-        SrOp::RRC  => (value.rotate_right(1), get_nth_bit(value, 0)),
+        SrOp::RRC => (value.rotate_right(1), get_nth_bit(value, 0)),
         // Flags: Z 0 0 C
-        SrOp::RL   => (nth_bit_to(value << 1, 0, cpu.regs.f.carry), get_nth_bit(value, 7)),
+        SrOp::RL => (
+            nth_bit_to(value << 1, 0, cpu.regs.f.carry),
+            get_nth_bit(value, 7),
+        ),
         // Flags: Z 0 0 C
-        SrOp::RR    => (nth_bit_to(value >> 1, 7, cpu.regs.f.carry), get_nth_bit(value, 0)),
+        SrOp::RR => (
+            nth_bit_to(value >> 1, 7, cpu.regs.f.carry),
+            get_nth_bit(value, 0),
+        ),
         // Flags: Z 0 0 C
-        SrOp::SLA  => (value << 1, get_nth_bit(value, 7)),
+        SrOp::SLA => (value << 1, get_nth_bit(value, 7)),
         // Flags: Z 0 0 C
-        SrOp::SRA  => (nth_bit_to(value >> 1, 7, get_nth_bit(value, 7)), get_nth_bit(value, 0)),
+        SrOp::SRA => (
+            nth_bit_to(value >> 1, 7, get_nth_bit(value, 7)),
+            get_nth_bit(value, 0),
+        ),
         // Flags: Z 0 0 0
         SrOp::SWAP => (swap_nibbles(value), false),
         // Flags: Z 0 0 C
-        SrOp::SRL  => (value >> 1, get_nth_bit(value, 0)),
+        SrOp::SRL => (value >> 1, get_nth_bit(value, 0)),
     }
 }
 
@@ -866,17 +907,17 @@ fn perform_sr8(cpu: &mut CPU, operation: SrOp, value: u8) -> (u8, bool) {
 #[repr(u8)]
 enum Condition {
     NZ = 0,
-    Z  = 1,
+    Z = 1,
     NC = 2,
-    C  = 3,
+    C = 3,
 }
 
 impl TryFrom<u8> for Condition {
     type Error = ();
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         let r = match value {
-            0 => Condition::NZ, 
-            1 => Condition::Z, 
+            0 => Condition::NZ,
+            1 => Condition::Z,
             2 => Condition::NC,
             3 => Condition::C,
             _ => return Err(()),
@@ -888,9 +929,9 @@ impl TryFrom<u8> for Condition {
 fn check_condition(cpu: &CPU, conditon: Condition) -> bool {
     match conditon {
         Condition::NZ => !cpu.regs.f.zero,
-        Condition::Z  => cpu.regs.f.zero,
+        Condition::Z => cpu.regs.f.zero,
         Condition::NC => !cpu.regs.f.carry,
-        Condition::C  => cpu.regs.f.carry,
+        Condition::C => cpu.regs.f.carry,
     }
 }
 
@@ -899,20 +940,20 @@ fn check_condition(cpu: &CPU, conditon: Condition) -> bool {
 enum AccFlagOp {
     RLCA = 0,
     RRCA = 1,
-    RLA  = 2,
-    RRA  = 3,
-    DAA  = 4,
-    CPL  = 5,
-    SCF  = 6, 
-    CCF  = 7,
+    RLA = 2,
+    RRA = 3,
+    DAA = 4,
+    CPL = 5,
+    SCF = 6,
+    CCF = 7,
 }
 
 impl TryFrom<u8> for AccFlagOp {
     type Error = ();
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         let r = match value {
-            0 => AccFlagOp::RLCA, 
-            1 => AccFlagOp::RRCA, 
+            0 => AccFlagOp::RLCA,
+            1 => AccFlagOp::RRCA,
             2 => AccFlagOp::RLA,
             3 => AccFlagOp::RRA,
             4 => AccFlagOp::DAA,
@@ -970,7 +1011,7 @@ fn perform_acc_flag(cpu: &mut CPU, operation: AccFlagOp) {
             if !cpu.regs.f.subtraction {
                 if cpu.regs.f.carry || value > 0x99 {
                     value += 0x60;
-                    cpu.regs.f.carry = true;   
+                    cpu.regs.f.carry = true;
                 }
                 if cpu.regs.f.half_carry || (value & 0x0f) > 0x09 {
                     value += 0x06;
@@ -1060,7 +1101,7 @@ fn bit_4_borrow(op1: u8, op2: u8) -> bool {
 // p = y rightshifted one position (i.e. bits 5-4)
 // q = y modulo 2 (i.e. bit 3)
 // diagram and explanation:
-// https://gb-archive.github.io/salvage/decoding_gbz80_opcodes/Decoding%20Gamboy%20Z80%20Opcodes.html 
+// https://gb-archive.github.io/salvage/decoding_gbz80_opcodes/Decoding%20Gamboy%20Z80%20Opcodes.html
 
 fn get_z(val: u8) -> u8 {
     val & 0b00000111

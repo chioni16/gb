@@ -1,9 +1,9 @@
-use crate::{Addr, mmu::MMU, DIVIDER_WRITE};
+use crate::{mmu::MMU, util::Addr, DIVIDER_WRITE};
 
-const DIV:  Addr = Addr::from(0xff04);
+const DIV: Addr = Addr::from(0xff04);
 const TIMA: Addr = Addr::from(0xff05);
-const TMA:  Addr = Addr::from(0xff06);
-const TAC:  Addr = Addr::from(0xff07);
+const TMA: Addr = Addr::from(0xff06);
+const TAC: Addr = Addr::from(0xff07);
 
 #[derive(Debug)]
 pub(crate) struct Timer {
@@ -41,7 +41,7 @@ impl DivTimer {
 
     // pub fn write(&mut self, mmu: &mut MMU, _value: u8) {
     //     self.0 = 0;
-    //     mmu.writeu8(DIV, 0); 
+    //     mmu.writeu8(DIV, 0);
     // }
 
     pub fn tick(&mut self, mmu: &mut MMU, cpu_ticks: u16) {
@@ -51,9 +51,9 @@ impl DivTimer {
                 DIVIDER_WRITE = false;
             }
         }
-        let new_tick =  self.0.wrapping_add(cpu_ticks);
+        let new_tick = self.0.wrapping_add(cpu_ticks);
         if new_tick as u8 == 0 {
-            mmu.writeu8(DIV, (new_tick >> 8) as u8); 
+            mmu.writeu8(DIV, (new_tick >> 8) as u8);
         }
         self.0 = new_tick;
     }
@@ -72,11 +72,11 @@ impl Counter {
 
     // pub fn write(&mut self, mmu: &mut MMU, _value: u8) {
     //     self.0 = 0;
-    //     mmu.writeu8(DIV, 0); 
+    //     mmu.writeu8(DIV, 0);
     // }
 
     pub fn tick(&mut self, mmu: &mut MMU, div: u16) {
-        // The “Timer Enable” bit (Bit 2) is extracted from the value 
+        // The “Timer Enable” bit (Bit 2) is extracted from the value
         // in the TAC register and stored for the next step.
         let tc = mmu.readu8(TAC);
         let tc = TimerControl::from(tc);
@@ -87,11 +87,11 @@ impl Counter {
         // 0b11: Bit 7
         let bit = match tc.select {
             Select::Zero => 9,
-            Select::One  => 3,
-            Select::Two  => 5,
+            Select::One => 3,
+            Select::Two => 5,
             Select::Three => 7,
         };
-        // The bit taken from the DIV counter is ANDed with the Timer Enable bit. 
+        // The bit taken from the DIV counter is ANDed with the Timer Enable bit.
         // The result of this operation will be referred to as the “AND Result”.
         let new = tc.enable && div & (1 << bit) != 0;
         if self.0 && !new {
@@ -104,7 +104,7 @@ impl Counter {
         }
         self.0 = new;
     }
-}   
+}
 
 struct TimerControl {
     enable: bool,
@@ -127,7 +127,7 @@ impl From<u8> for TimerControl {
             1 => Select::One,
             2 => Select::Two,
             3 => Select::Three,
-            _ => unreachable!()
+            _ => unreachable!(),
         };
         TimerControl { enable, select }
     }
@@ -135,7 +135,6 @@ impl From<u8> for TimerControl {
 
 impl From<TimerControl> for u8 {
     fn from(value: TimerControl) -> Self {
-        (value.enable as u8) << 2 
-        | value.select as u8
+        (value.enable as u8) << 2 | value.select as u8
     }
 }

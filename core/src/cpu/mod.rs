@@ -2,18 +2,18 @@ mod instruction;
 mod interrupts;
 mod registers;
 
-use super::Addr;
 use super::mmu::MMU;
+use crate::util::Addr;
 use instruction::decode;
-use registers::Registers;
+use interrupts::{Interrupt, Interrupts};
 use registers::Flags;
-use interrupts::{Interrupts, Interrupt};
+use registers::Registers;
 
 const INT_ENABLE_ADDR: Addr = Addr::from(0xffff);
 const INT_REQUEST_ADDR: Addr = Addr::from(0xff0f);
 
 pub(crate) struct CPU {
-    regs: Registers, 
+    regs: Registers,
     pc: Addr,
     sp: Addr,
     ime: IMEState,
@@ -56,17 +56,17 @@ impl CPU {
     //     self.sp = 0xfffe.into();
     //     self.ime = IMEState::Enabled;
     // }
-   
+
     pub(crate) fn step(&mut self, mmu: &mut MMU) -> u64 {
         if self.handle_ime(mmu) {
             return 20;
         }
-        println!("A: {:0>2X} F: {:0>2X} B: {:0>2X} C: {:0>2X} D: {:0>2X} E: {:0>2X} H: {:0>2X} L: {:0>2X} SP: {:0>4X} PC: 00:{:0>4X} ({:0>2X} {:0>2X} {:0>2X} {:0>2X})", self.regs.a, <Flags as Into<u8>>::into(self.regs.f), self.regs.b, self.regs.c, self.regs.d, self.regs.e, self.regs.h, self.regs.l, self.sp.0, self.pc.0, mmu.readu8(self.pc),mmu.readu8(self.pc+1.into()),mmu.readu8(self.pc+2.into()),mmu.readu8(self.pc+3.into()));
+        // println!("A: {:0>2X} F: {:0>2X} B: {:0>2X} C: {:0>2X} D: {:0>2X} E: {:0>2X} H: {:0>2X} L: {:0>2X} SP: {:0>4X} PC: 00:{:0>4X} ({:0>2X} {:0>2X} {:0>2X} {:0>2X})", self.regs.a, <Flags as Into<u8>>::into(self.regs.f), self.regs.b, self.regs.c, self.regs.d, self.regs.e, self.regs.h, self.regs.l, self.sp.0, self.pc.0, mmu.readu8(self.pc),mmu.readu8(self.pc+1.into()),mmu.readu8(self.pc+2.into()),mmu.readu8(self.pc+3.into()));
         let mut opcode = self.readu8(mmu) as u16;
         if opcode == 0xcb {
             opcode = opcode << 8 | self.readu8(mmu) as u16;
         }
-        
+
         // println!("{:#x?}\t", opcode);
         let ticks = decode(opcode, self, mmu);
         ticks
@@ -75,7 +75,7 @@ impl CPU {
     // interrupts
     fn handle_ime(&mut self, mmu: &mut MMU) -> bool {
         match self.ime {
-            IMEState::Enabled       => {
+            IMEState::Enabled => {
                 let mut request = self.get_interrupt_request(mmu);
                 let enable = self.get_interrupt_enable(mmu);
 
@@ -84,7 +84,7 @@ impl CPU {
                     self.ime = IMEState::Disabled;
                     self.push_stack(mmu, self.pc.into());
                     match interrupt {
-                        Interrupt::VBlank  => {
+                        Interrupt::VBlank => {
                             request.vblank = false;
                             self.pc = 0x40.into();
                         }
@@ -92,26 +92,26 @@ impl CPU {
                             request.lcd_stat = false;
                             self.pc = 0x48.into();
                         }
-                        Interrupt::Timer   => {
+                        Interrupt::Timer => {
                             request.timer = false;
                             self.pc = 0x50.into();
                         }
-                        Interrupt::Serial  => {
+                        Interrupt::Serial => {
                             request.serial = false;
                             self.pc = 0x58.into();
                         }
-                        Interrupt::Joypad  => {
+                        Interrupt::Joypad => {
                             request.joypad = false;
                             self.pc = 0x60.into();
                         }
                     }
                     self.set_interrupt_request(mmu, request);
-                    return true
+                    return true;
                 }
             }
             IMEState::Intermediate1 => self.ime = IMEState::Intermediate2,
             IMEState::Intermediate2 => self.ime = IMEState::Enabled,
-            IMEState::Disabled      => {}
+            IMEState::Disabled => {}
         }
         false
     }
@@ -129,9 +129,9 @@ impl CPU {
 
     // stack
     pub fn push_stack(&mut self, mmu: &mut MMU, v: u16) {
-        // TODO 
+        // TODO
         // invariance? sp pointing to the location where next piece of information
-        // can be written? 
+        // can be written?
         self.sp -= 2.into();
         mmu.writeu16(self.sp, v);
     }
@@ -162,13 +162,12 @@ impl CPU {
     pub fn writeu16(&mut self, value: u16, mmu: &mut MMU) {
         mmu.writeu16(self.pc, value);
     }
-
 }
 
 #[derive(Debug, Clone, Copy)]
 enum IMEState {
-    Disabled, 
-    Enabled, 
+    Disabled,
+    Enabled,
     Intermediate1,
     Intermediate2,
 }

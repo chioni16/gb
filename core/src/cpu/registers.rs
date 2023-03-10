@@ -8,7 +8,7 @@ pub(super) struct Flags {
 
 impl Flags {
     pub fn new() -> Self {
-        Self { 
+        Self {
             zero: false,
             subtraction: false,
             half_carry: false,
@@ -19,9 +19,9 @@ impl Flags {
 
 impl From<u8> for Flags {
     fn from(value: u8) -> Self {
-        let mut f = Self::new();     
-        f.zero = ((value >> 7) & 1) == 1; 
-        f.subtraction = ((value >> 6) & 1) == 1 ;
+        let mut f = Self::new();
+        f.zero = ((value >> 7) & 1) == 1;
+        f.subtraction = ((value >> 6) & 1) == 1;
         f.half_carry = ((value >> 5) & 1) == 1;
         f.carry = ((value >> 4) & 1) == 1;
         f
@@ -30,10 +30,9 @@ impl From<u8> for Flags {
 
 impl From<Flags> for u8 {
     fn from(value: Flags) -> Self {
-        ((((value.zero as u8) << 1 
-        | value.subtraction as u8) << 1
-        | value.half_carry as u8) << 1
-        | value.carry as u8) << 4
+        ((((value.zero as u8) << 1 | value.subtraction as u8) << 1 | value.half_carry as u8) << 1
+            | value.carry as u8)
+            << 4
     }
 }
 
@@ -50,7 +49,7 @@ pub(super) struct Registers {
 
 impl Registers {
     pub fn new() -> Self {
-        Self { 
+        Self {
             a: 0,
             f: Flags::new(),
             b: 0,
@@ -136,24 +135,24 @@ impl Registers {
         self.h = msb(v)
     }
     pub fn incr_hl(&mut self) {
-        let v = self.get_hl()+1;
+        let v = self.get_hl() + 1;
         self.set_hl(v);
     }
     pub fn decr_hl(&mut self) {
-        let v = self.get_hl()-1;
+        let v = self.get_hl() - 1;
         self.set_hl(v);
     }
     pub fn set_af(&mut self, v: u16) {
         // In BC, B is the high byte and C the low. So C appears first in memory.
-        // https://www.reddit.com/r/EmuDev/comments/tqdt9b/gameboy_endianness_and_registers/ 
+        // https://www.reddit.com/r/EmuDev/comments/tqdt9b/gameboy_endianness_and_registers/
         let v = v.to_be_bytes();
         self.set_a(v[0]);
         self.set_f(v[1]);
     }
 }
 
-fn msb(v: u16) -> u8 {(
-    (v & 0xff00) >> 8) as u8
+fn msb(v: u16) -> u8 {
+    ((v & 0xff00) >> 8) as u8
 }
 
 fn lsb(v: u16) -> u8 {
