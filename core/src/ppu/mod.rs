@@ -1,8 +1,12 @@
+mod colour;
+mod lcdc;
+mod palette;
 mod screen;
 
-use std::fmt::Display;
-
 use crate::{mmu::MMU, util::Addr};
+use colour::Colour;
+use lcdc::LCDC;
+use palette::Palette;
 use screen::Screen;
 pub use screen::screen_u32;
 
@@ -68,7 +72,7 @@ impl PPU {
             ticks: 0,
             screen: Screen::new(),
         };
-        // ppu.set_curr_scanline(mmu, 0);
+        ppu.set_curr_scanline(mmu, 0);
         ppu
     }
 
@@ -245,250 +249,6 @@ impl PPU {
     }
 }
 
-// LCDC
-// ============================================================================
-// Bit	Name	                        Usage notes
-// ============================================================================
-//  7	LCD and PPU enable	            0=Off, 1=On
-//  6	Window tile map area	        0=9800-9BFF, 1=9C00-9FFF
-//  5	Window enable	                0=Off, 1=On
-//  4	BG and Window tile data area	0=8800-97FF, 1=8000-8FFF
-//  3	BG tile map area	            0=9800-9BFF, 1=9C00-9FFF
-//  2	OBJ size	                    0=8x8, 1=8x16
-//  1	OBJ enable	                    0=Off, 1=On
-//  0	BG and Window enable/priority	0=Off, 1=On
-
-enum TileMap {
-    Low,  // 9800-9BFF
-    High, // 9C00-9FFF
-}
-
-impl From<TileMap> for bool {
-    fn from(value: TileMap) -> Self {
-        match value {
-            TileMap::Low => false,
-            TileMap::High => true,
-        }
-    }
-}
-
-impl From<bool> for TileMap {
-    fn from(value: bool) -> Self {
-        match value {
-            false => Self::Low,
-            true => Self::High,
-        }
-    }
-}
-
-impl From<TileMap> for Addr {
-    fn from(value: TileMap) -> Self {
-        match value {
-            TileMap::Low => 0x9800.into(),
-            TileMap::High => 0x9c00.into(),
-        }
-    }
-}
-
-enum TileData {
-    Low,  // 8000-8FFF, 0 - 255
-    High, // 8800-97FF, -128 - 127
-}
-
-impl TileData {
-    fn get_tile_data_addr(&self, tile_index: u8) -> Addr {
-        match self {
-            Self::Low => {
-                let base = 0x8000u16;
-                let tile_index: i16 = 16 * tile_index as i16;
-                base.wrapping_add_signed(tile_index).into()
-            }
-            Self::High => {
-                let base = 0x9000u16;
-                let tile_index: i16 = 16 * (tile_index as i8) as i16;
-                base.wrapping_add_signed(tile_index).into()
-            }
-        }
-    }
-}
-
-impl From<TileData> for bool {
-    fn from(value: TileData) -> Self {
-        match value {
-            TileData::Low => true,
-            TileData::High => false,
-        }
-    }
-}
-
-impl From<bool> for TileData {
-    fn from(value: bool) -> Self {
-        match value {
-            false => Self::High,
-            true => Self::Low,
-        }
-    }
-}
-
-enum ObjectSize {
-    Short, // 8x8
-    Long,  // 8x16
-}
-
-impl From<ObjectSize> for bool {
-    fn from(value: ObjectSize) -> Self {
-        match value {
-            ObjectSize::Short => false,
-            ObjectSize::Long => true,
-        }
-    }
-}
-
-impl From<bool> for ObjectSize {
-    fn from(value: bool) -> Self {
-        match value {
-            false => Self::Short,
-            true => Self::Long,
-        }
-    }
-}
-
-struct LCDC {
-    ppu_enable: bool,
-    window_tile_map: TileMap,
-    window_enable: bool,
-    bg_window_tile_data: TileData,
-    bg_tile_map: TileMap,
-    object_size: ObjectSize,
-    object_enable: bool,
-    bg_window_enable: bool,
-}
-
-impl From<u8> for LCDC {
-    fn from(value: u8) -> Self {
-        Self {
-            ppu_enable: get_nth_bit(value, 7),
-            window_tile_map: get_nth_bit(value, 6).into(),
-            window_enable: get_nth_bit(value, 5),
-            bg_window_tile_data: get_nth_bit(value, 4).into(),
-            bg_tile_map: get_nth_bit(value, 3).into(),
-            object_size: get_nth_bit(value, 2).into(),
-            object_enable: get_nth_bit(value, 1),
-            bg_window_enable: get_nth_bit(value, 0),
-        }
-    }
-}
-
-impl From<LCDC> for u8 {
-    fn from(value: LCDC) -> Self {
-        (((((((value.ppu_enable as u8) << 1
-            | <TileMap as Into<bool>>::into(value.window_tile_map) as u8)
-            << 1
-            | value.window_enable as u8)
-            << 1
-            | <TileData as Into<bool>>::into(value.bg_window_tile_data) as u8)
-            << 1
-            | <TileMap as Into<bool>>::into(value.bg_tile_map) as u8)
-            << 1
-            | <ObjectSize as Into<bool>>::into(value.object_size) as u8)
-            << 1
-            | value.object_enable as u8)
-            << 1
-            | value.bg_window_enable as u8
-    }
-}
-
-// =====================
-// Value	Colour
-// =====================
-//    0	    White
-//    1	    Light gray
-//    2	    Dark gray
-//    3	    Black
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(u8)]
-enum Colour {
-    White = 0,
-    LightGrey = 1,
-    DarkGrey = 2,
-    Black = 3,
-}
-
-impl Display for Colour {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let c = match self {
-            Colour::White => '█',
-            Colour::LightGrey => '▓',
-            Colour::DarkGrey => '▒',
-            Colour::Black => '░',
-        };
-        write!(f, "{}", c)
-    }
-}
-
-impl Into<u32> for Colour {
-    fn into(self) -> u32 {
-        match self {
-            Colour::White => (255 << 16) | (255 << 8) | 255,
-            Colour::LightGrey => (150 << 16) | (150 << 8) | 150,
-            Colour::DarkGrey => (80 << 16) | (80 << 8) | 80,
-            Colour::Black =>  0,
-        }
-    }
-}
-
-impl TryFrom<u8> for Colour {
-    type Error = ();
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
-        let res = match value {
-            0 => Self::White,
-            1 => Self::LightGrey,
-            2 => Self::DarkGrey,
-            3 => Self::Black,
-            _ => return Err(()),
-        };
-        Ok(res)
-    }
-}
-
-struct Palette {
-    // each field can hold one of four values: 0,1,2,3
-    colour0: Colour, // bits 0-1
-    colour1: Colour, // bits 2-3
-    colour2: Colour, // bits 4-5
-    colour3: Colour, // bits 6-7
-}
-
-impl From<u8> for Palette {
-    fn from(value: u8) -> Self {
-        Self {
-            colour0: Colour::try_from(
-                ((get_nth_bit(value, 1) as u8) << 1) | get_nth_bit(value, 0) as u8,
-            )
-            .unwrap(),
-            colour1: Colour::try_from(
-                ((get_nth_bit(value, 3) as u8) << 1) | get_nth_bit(value, 2) as u8,
-            )
-            .unwrap(),
-            colour2: Colour::try_from(
-                ((get_nth_bit(value, 5) as u8) << 1) | get_nth_bit(value, 4) as u8,
-            )
-            .unwrap(),
-            colour3: Colour::try_from(
-                ((get_nth_bit(value, 7) as u8) << 1) | get_nth_bit(value, 6) as u8,
-            )
-            .unwrap(),
-        }
-    }
-}
-
-impl From<Palette> for u8 {
-    fn from(value: Palette) -> Self {
-        ((((value.colour3 as u8) << 2) | (value.colour2 as u8) << 2) | (value.colour1 as u8) << 2)
-            | value.colour0 as u8
-    }
-}
 
 fn get_nth_bit(value: u8, n: u8) -> bool {
     assert!(n < 8);
