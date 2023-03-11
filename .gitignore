@@ -1,2 +1,3 @@
 Gameboy-logs/
-gb-test-roms/
+gb-test-roms
+.DS_Store
