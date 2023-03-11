@@ -1,4 +1,6 @@
 #![feature(bigint_helper_methods)]
+#![feature(exclusive_range_pattern)]
+#![feature(let_chains)]
 
 mod cpu;
 mod mmu;
@@ -23,16 +25,24 @@ pub struct Machine {
     timer: Timer,
 }
 
+fn file_helper(file_path: impl AsRef<Path>, size: usize) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    let mut file = fs::File::open(file_path.as_ref())?;
+    // TODO change this / find a suitable function
+    // let mut buf = vec![0u8; 32*1024];
+    let mut buf = vec![];
+    file.read_to_end(&mut buf)?;
+    buf.resize(size, 0);
+    Ok(buf)
+}
+
 impl Machine {
     pub fn new(cartridge: impl AsRef<Path>, bootrom: Option<impl AsRef<Path>>) -> Result<Self, Box<dyn std::error::Error>> {
+        let buf = file_helper(cartridge, 32*1024)?;
 
-        let mut file = fs::File::open(cartridge.as_ref())?;
-        // TODO change this / find a suitable function
-        // let mut buf = vec![0u8; 32*1024];
-        let mut buf = vec![];
-        file.read_to_end(&mut buf)?;
-        buf.resize(32*1024, 0);
-
+        let bootrom = bootrom
+        .map(|path| file_helper(path, 0x1000))
+        .transpose()?;
+        let bp = bootrom.is_some();
         /*
         let logo: [u8; 48] =
             [0xce,0xed,0x66,0x66,0xcc,0x0d,0x00,0x0b,0x03,0x73,0x00,0x83,
@@ -49,7 +59,7 @@ impl Machine {
         */
 
         let cpu = CPU::new();
-        let mut mmu = MMU::new(buf);
+        let mut mmu = MMU::new(bootrom, buf);
         let ppu = PPU::new(&mut mmu);
         let timer = Timer::new();
 
@@ -60,8 +70,8 @@ impl Machine {
             timer,
         };
 
-        if bootrom.is_none() {
-            m.cpu.no_boot();
+        if !bp {
+            m.cpu.no_boot(&mut m.mmu);
         }
 
         Ok(m)

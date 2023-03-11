@@ -21,10 +21,6 @@ impl Screen {
             screen_u32[index] = colour.into();
         }
     }
-
-    pub fn as_u32(&self) -> Vec<u32> {
-        self.0.iter().map(|c| (*c).into()).collect::<Vec<_>>()
-    }
 }
 
 impl Display for Screen {

@@ -29,7 +29,7 @@ impl CPU {
         }
     }
 
-    pub fn no_boot(&mut self) {
+    pub fn no_boot(&mut self, mmu: &mut MMU) {
         self.regs.a = 0x11;
         self.regs.f = 0x80.into();
         self.regs.b = 0x00;
@@ -41,6 +41,9 @@ impl CPU {
         self.pc = 0x0100.into();
         self.sp = 0xfffe.into();
         self.ime = IMEState::Enabled;
+
+        // turn off DMG boot rom
+        mmu.writeu8(0xff50.into(), 1);
     }
 
     // pub fn no_boot(&mut self) {

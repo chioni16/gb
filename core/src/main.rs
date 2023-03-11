@@ -6,8 +6,9 @@ const WIDTH: usize = 160;
 const HEIGHT: usize = 144;
 
 fn main() {
+    let bootrom: Option<&str> = None;
     let bootrom = Some("/Users/ggd/projects/gb/roms/dmg_boot.bin");
-    let cartridge = "/Users/ggd/projects/gb/roms/dmg_boot.bin";
+    let cartridge = "/Users/ggd/projects/gb/roms/Tetris.gb";
     let mut m = Machine::new(cartridge, bootrom).unwrap();
     
     let mut window = Window::new(
@@ -31,7 +32,7 @@ fn main() {
     while window.is_open() && !window.is_key_down(Key::Escape) {
         m.step();
 
-        println!("{}", i);
+        // println!("{}", i);
         i = i.wrapping_add(1);
 
         if i % 10000 == 0 {
@@ -41,11 +42,4 @@ fn main() {
                 .unwrap();
         }
     }
-    // loop {
-    //     m.step();
-        
-    //     println!("{}", i);
-    //     i += 1;
-    // }
-
 }

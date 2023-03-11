@@ -1,41 +1,54 @@
+use std::fmt::Debug;
+
 use super::busio::{BusIO, SResult};
 use crate::util::Addr;
 
-#[derive(Debug)]
-pub(super) struct RAM(Vec<u8>);
+pub(super) struct RAM { 
+    buffer: Vec<u8>,
+    map: Box<dyn Fn(Addr) -> Addr>,
+}
+
+impl Debug for RAM {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "RAM: {:?}", self.buffer)
+    }
+}
 
 impl RAM {
-    pub(super) fn new(size: usize) -> Self {
-        Self(vec![0; size])
+    pub(super) fn new(size: usize, f: Box<dyn Fn(Addr) -> Addr>) -> Self {
+        Self {
+            buffer: vec![0; size],
+            map: f,
+        }
     }
 }
 
 impl BusIO for RAM {
     fn readu8(&self, addr: Addr) -> SResult<u8> {
-        let addr: u16 = addr.into();
-        Ok(self.0[addr as usize])
+        let addr: u16 = (self.map)(addr).into();
+        Ok(self.buffer[addr as usize])
     }
 
     fn readu16(&self, addr: Addr) -> SResult<u16> {
-        let addr: u16 = addr.into();
+        let addr: u16 = (self.map)(addr).into();
         Ok(u16::from_le_bytes([
-            self.0[addr as usize],
-            self.0[addr as usize + 1],
+            self.buffer[addr as usize],
+            self.buffer[addr as usize + 1],
         ]))
     }
 
     fn writeu8(&mut self, addr: Addr, value: u8) -> SResult<()> {
-        let addr: u16 = addr.into();
-        self.0[addr as usize] = value;
+        let addr: u16 = (self.map)(addr).into();
+        self.buffer[addr as usize] = value;
         Ok(())
     }
 
     fn writeu16(&mut self, addr: Addr, value: u16) -> SResult<()> {
         // Little Endian
-        let addr: u16 = addr.into();
+        let addr: u16 = (self.map)(addr).into();
         let value = value.to_le_bytes();
-        self.0[addr as usize] = value[0];
-        self.0[addr as usize + 1] = value[1];
+        self.buffer[addr as usize] = value[0];
+        self.buffer[addr as usize + 1] = value[1];
         Ok(())
     }
 
