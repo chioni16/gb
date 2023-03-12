@@ -10,7 +10,7 @@ fn main() {
     let bootrom = Some("/Users/ggd/projects/gb/roms/dmg_boot.bin");
     let cartridge = "/Users/ggd/projects/gb/roms/Tetris.gb";
     let mut m = Machine::new(cartridge, bootrom).unwrap();
-    
+
     let mut window = Window::new(
         "Test - ESC to exit",
         WIDTH,
@@ -18,7 +18,7 @@ fn main() {
         WindowOptions {
             scale: Scale::X4,
             ..WindowOptions::default()
-        }
+        },
     )
     .unwrap_or_else(|e| {
         panic!("{}", e);
@@ -27,7 +27,7 @@ fn main() {
     // Limit to max ~60 fps update rate
     window.limit_update_rate(Some(std::time::Duration::from_micros(16600)));
 
-    let mut i= 0usize;
+    let mut i = 0usize;
 
     while window.is_open() && !window.is_key_down(Key::Escape) {
         m.step();
@@ -38,7 +38,7 @@ fn main() {
         if i % 10000 == 0 {
             // We unwrap here as we want this code to exit if it fails. Real applications may want to handle this in a different way
             window
-                .update_with_buffer(unsafe {&machine::ppu::screen_u32 } , WIDTH, HEIGHT)
+                .update_with_buffer(unsafe { &machine::ppu::screen_u32 }, WIDTH, HEIGHT)
                 .unwrap();
         }
     }

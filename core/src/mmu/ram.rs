@@ -3,7 +3,7 @@ use std::fmt::Debug;
 use super::busio::{BusIO, SResult};
 use crate::util::Addr;
 
-pub(super) struct RAM { 
+pub(crate) struct RAM {
     buffer: Vec<u8>,
     map: Box<dyn Fn(Addr) -> Addr>,
 }
@@ -15,12 +15,17 @@ impl Debug for RAM {
 }
 
 impl RAM {
-    pub(super) fn new(size: usize, f: Box<dyn Fn(Addr) -> Addr>) -> Self {
+    pub(crate) fn new(size: usize, f: Box<dyn Fn(Addr) -> Addr>) -> Self {
         Self {
             buffer: vec![0; size],
             map: f,
         }
     }
+
+    pub(crate) fn copy_from_slice(&mut self, src: &[u8]) {
+        self.buffer.copy_from_slice(src);
+    }
+
 }
 
 impl BusIO for RAM {
@@ -50,6 +55,11 @@ impl BusIO for RAM {
         self.buffer[addr as usize] = value[0];
         self.buffer[addr as usize + 1] = value[1];
         Ok(())
+    }
+
+    fn as_slice(&self, addr: Addr, len: usize) -> SResult<&[u8]> {
+        let addr: u16 = (self.map)(addr).into();
+        Ok(&self.buffer[addr as usize..][..len])
     }
 
     fn print_dbg(&self, _start: Addr, _len: u16) -> String {

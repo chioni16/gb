@@ -1,4 +1,3 @@
-
 // =====================
 // Value	Colour
 // =====================
@@ -34,7 +33,7 @@ impl Into<u32> for Colour {
             Colour::White => (255 << 16) | (255 << 8) | 255,
             Colour::LightGrey => (192 << 16) | (192 << 8) | 192,
             Colour::DarkGrey => (96 << 16) | (96 << 8) | 96,
-            Colour::Black =>  0,
+            Colour::Black => 0,
         }
     }
 }

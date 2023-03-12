@@ -1,7 +1,21 @@
 use derive_more::{Add, AddAssign, Display, From, Into, Sub, SubAssign};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-#[derive(Add, AddAssign, Sub, SubAssign, From, Into, Display)] // derive_more
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Add,
+    AddAssign,
+    Sub,
+    SubAssign,
+    From,
+    Into,
+    Display,
+)] // derive_more
 pub(crate) struct Addr(pub u16);
 impl Addr {
     pub(crate) const fn new() -> Self {

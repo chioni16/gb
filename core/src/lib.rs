@@ -8,12 +8,7 @@ pub mod ppu;
 mod timer;
 mod util;
 
-use crate::{
-    cpu::CPU,
-    mmu::MMU,
-    ppu::PPU,
-    timer::Timer,
-};
+use crate::{cpu::CPU, mmu::MMU};
 use std::{fs, io::Read, path::Path};
 
 static mut DIVIDER_WRITE: bool = false;
@@ -21,11 +16,12 @@ static mut DIVIDER_WRITE: bool = false;
 pub struct Machine {
     cpu: CPU,
     mmu: MMU,
-    pub ppu: PPU,
-    timer: Timer,
 }
 
-fn file_helper(file_path: impl AsRef<Path>, size: usize) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+fn file_helper(
+    file_path: impl AsRef<Path>,
+    size: usize,
+) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
     let mut file = fs::File::open(file_path.as_ref())?;
     // TODO change this / find a suitable function
     // let mut buf = vec![0u8; 32*1024];
@@ -36,12 +32,13 @@ fn file_helper(file_path: impl AsRef<Path>, size: usize) -> Result<Vec<u8>, Box<
 }
 
 impl Machine {
-    pub fn new(cartridge: impl AsRef<Path>, bootrom: Option<impl AsRef<Path>>) -> Result<Self, Box<dyn std::error::Error>> {
-        let buf = file_helper(cartridge, 32*1024)?;
+    pub fn new(
+        cartridge: impl AsRef<Path>,
+        bootrom: Option<impl AsRef<Path>>,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        let buf = file_helper(cartridge, 32 * 1024)?;
 
-        let bootrom = bootrom
-        .map(|path| file_helper(path, 0x1000))
-        .transpose()?;
+        let bootrom = bootrom.map(|path| file_helper(path, 0x1000)).transpose()?;
         let bp = bootrom.is_some();
         /*
         let logo: [u8; 48] =
@@ -58,16 +55,9 @@ impl Machine {
         });
         */
 
-        let cpu = CPU::new();
-        let mut mmu = MMU::new(bootrom, buf);
-        let ppu = PPU::new(&mut mmu);
-        let timer = Timer::new();
-
         let mut m = Self {
-            cpu,
-            mmu,
-            ppu,
-            timer,
+            cpu: CPU::new(),
+            mmu: MMU::new(bootrom, buf),
         };
 
         if !bp {
@@ -79,8 +69,7 @@ impl Machine {
 
     pub fn step(&mut self) {
         let cpu_ticks = self.cpu.step(&mut self.mmu);
-        self.ppu.tick(&mut self.mmu, cpu_ticks);
-        self.timer.tick(&mut self.mmu, cpu_ticks as u16);
+        self.mmu.tick(cpu_ticks);
     }
 
     pub fn run(&mut self) {

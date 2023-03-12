@@ -27,14 +27,19 @@ impl BusIO for ROM {
 
     fn writeu8(&mut self, _addr: Addr, _value: u8) -> SResult<()> {
         // panic!("write request for ROM, addr: {:#x?}", addr);
-        // Memory Bank Controllers 
+        // Memory Bank Controllers
         Ok(())
     }
 
     fn writeu16(&mut self, _addr: Addr, _value: u16) -> SResult<()> {
         // panic!("write request for ROM, addr: {:#x?}", addr);
-        // Memory Bank Controllers 
+        // Memory Bank Controllers
         Ok(())
+    }
+
+    fn as_slice(&self, addr: Addr, len: usize) -> SResult<&[u8]> {
+        let addr: u16 = addr.into();
+        Ok(&self.0[addr as usize..][..len])
     }
 
     fn print_dbg(&self, _start: Addr, _len: u16) -> String {

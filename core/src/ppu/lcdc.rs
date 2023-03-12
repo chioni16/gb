@@ -1,5 +1,5 @@
-use crate::util::Addr;
 use super::get_nth_bit;
+use crate::util::Addr;
 // LCDC
 // ============================================================================
 // Bit	Name	                        Usage notes
@@ -13,7 +13,8 @@ use super::get_nth_bit;
 //  1	OBJ enable	                    0=Off, 1=On
 //  0	BG and Window enable/priority	0=Off, 1=On
 
-pub(super) enum TileMap {
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum TileMap {
     Low,  // 9800-9BFF
     High, // 9C00-9FFF
 }
@@ -45,7 +46,8 @@ impl From<TileMap> for Addr {
     }
 }
 
-pub(super) enum TileData {
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum TileData {
     Low,  // 8000-8FFF, 0 - 255
     High, // 8800-97FF, -128 - 127
 }
@@ -85,7 +87,8 @@ impl From<bool> for TileData {
     }
 }
 
-pub(super) enum ObjectSize {
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum ObjectSize {
     Short, // 8x8
     Long,  // 8x16
 }
@@ -108,15 +111,16 @@ impl From<bool> for ObjectSize {
     }
 }
 
-pub(super) struct LCDC {
-    pub(super) ppu_enable: bool,
-    pub(super) window_tile_map: TileMap,
-    pub(super) window_enable: bool,
-    pub(super) bg_window_tile_data: TileData,
-    pub(super) bg_tile_map: TileMap,
-    pub(super) object_size: ObjectSize,
-    pub(super) object_enable: bool,
-    pub(super) bg_window_enable: bool,
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct LCDC {
+    pub(crate) ppu_enable: bool,
+    pub(crate) window_tile_map: TileMap,
+    pub(crate) window_enable: bool,
+    pub(crate) bg_window_tile_data: TileData,
+    pub(crate) bg_tile_map: TileMap,
+    pub(crate) object_size: ObjectSize,
+    pub(crate) object_enable: bool,
+    pub(crate) bg_window_enable: bool,
 }
 
 impl From<u8> for LCDC {
@@ -150,5 +154,11 @@ impl From<LCDC> for u8 {
             | value.object_enable as u8)
             << 1
             | value.bg_window_enable as u8
+    }
+}
+
+impl Default for LCDC {
+    fn default() -> Self {
+        Self::from(0)
     }
 }

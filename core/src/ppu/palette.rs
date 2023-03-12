@@ -1,7 +1,8 @@
-use super::Colour;
 use super::get_nth_bit;
+use super::Colour;
 
-pub(super) struct Palette {
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Palette {
     // each field can hold one of four values: 0,1,2,3
     colour0: Colour, // bits 0-1
     colour1: Colour, // bits 2-3
@@ -36,5 +37,11 @@ impl From<Palette> for u8 {
     fn from(value: Palette) -> Self {
         ((((value.colour3 as u8) << 2) | (value.colour2 as u8) << 2) | (value.colour1 as u8) << 2)
             | value.colour0 as u8
+    }
+}
+
+impl Default for Palette {
+    fn default() -> Self {
+        Self::from(0)
     }
 }

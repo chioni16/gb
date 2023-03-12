@@ -413,6 +413,7 @@ pub(super) fn decode(opcode: u16, cpu: &mut CPU, mmu: &mut MMU) -> u64 {
             // todo!();
             cpu.ime = IMEState::Enabled;
             let ret_pc = cpu.pop_stack(mmu);
+            println!("reti: {:x?}", ret_pc);
             cpu.pc = ret_pc.into();
             16
         }
