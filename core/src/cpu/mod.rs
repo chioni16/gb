@@ -25,7 +25,7 @@ impl CPU {
             regs: Registers::new(),
             pc: Addr::new(),
             sp: Addr::new(),
-            ime: IMEState::Enabled,
+            ime: IMEState::Disabled,
         }
     }
 
@@ -40,7 +40,6 @@ impl CPU {
         self.regs.l = 0x0d;
         self.pc = 0x0100.into();
         self.sp = 0xfffe.into();
-        self.ime = IMEState::Enabled;
 
         // turn off DMG boot rom
         // mmu.writeu8(0xff50.into(), 1);
@@ -65,7 +64,7 @@ impl CPU {
         if self.handle_ime(mmu) {
             return 20;
         }
-        println!("A: {:0>2X} F: {:0>2X} B: {:0>2X} C: {:0>2X} D: {:0>2X} E: {:0>2X} H: {:0>2X} L: {:0>2X} SP: {:0>4X} PC: 00:{:0>4X} ({:0>2X} {:0>2X} {:0>2X} {:0>2X})", self.regs.a, <Flags as Into<u8>>::into(self.regs.f), self.regs.b, self.regs.c, self.regs.d, self.regs.e, self.regs.h, self.regs.l, self.sp.0, self.pc.0, mmu.readu8(self.pc),mmu.readu8(self.pc+1.into()),mmu.readu8(self.pc+2.into()),mmu.readu8(self.pc+3.into()));
+        // println!("A: {:0>2X} F: {:0>2X} B: {:0>2X} C: {:0>2X} D: {:0>2X} E: {:0>2X} H: {:0>2X} L: {:0>2X} SP: {:0>4X} PC: 00:{:0>4X} ({:0>2X} {:0>2X} {:0>2X} {:0>2X})", self.regs.a, <Flags as Into<u8>>::into(self.regs.f), self.regs.b, self.regs.c, self.regs.d, self.regs.e, self.regs.h, self.regs.l, self.sp.0, self.pc.0, mmu.readu8(self.pc),mmu.readu8(self.pc+1.into()),mmu.readu8(self.pc+2.into()),mmu.readu8(self.pc+3.into()));
         let mut opcode = self.readu8(mmu) as u16;
         if opcode == 0xcb {
             opcode = opcode << 8 | self.readu8(mmu) as u16;

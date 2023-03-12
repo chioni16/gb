@@ -103,8 +103,8 @@ impl PPU {
 
             vblank_interrupt: false,
 
-            vram: RAM::new(8 * 1024, Box::new(|addr: Addr| addr - 0x8000.into())),
-            oam: RAM::new(0xa0, Box::new(|addr: Addr| addr - 0xfe00.into())),
+            vram: RAM::new(8 * 1024, Box::new(|addr: Addr| addr - 0x8000.into()), 0xda),
+            oam: RAM::new(0xa0, Box::new(|addr: Addr| addr - 0xfe00.into()), 0),
         };
         ppu
     }

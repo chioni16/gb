@@ -15,9 +15,9 @@ impl Debug for RAM {
 }
 
 impl RAM {
-    pub(crate) fn new(size: usize, f: Box<dyn Fn(Addr) -> Addr>) -> Self {
+    pub(crate) fn new(size: usize, f: Box<dyn Fn(Addr) -> Addr>, init_val: u8) -> Self {
         Self {
-            buffer: vec![0; size],
+            buffer: vec![init_val; size],
             map: f,
         }
     }

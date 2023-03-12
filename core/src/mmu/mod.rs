@@ -55,7 +55,7 @@ impl MMU {
             
             0xff01 | 0xff02 => Ok(&self.nuh), // serial transfer
             0xff10..=0xff3f => Ok(&self.nuh), // audio
-            0xff51..=0xff7f => Ok(&self.nul), // io regs
+            0xff51..=0xff7f => Ok(&self.nuh), // io regs
             0xfea0..0xff00 => Ok(&self.nuh), // not usable
             
             
@@ -78,7 +78,7 @@ impl MMU {
 
             0xff01 | 0xff02 => Ok(&mut self.nuh), // serial transfer
             0xff10..=0xff3f => Ok(&mut self.nuh), // audio
-            0xff51..=0xff7f => Ok(&mut self.nul), // io regs
+            0xff51..=0xff7f => Ok(&mut self.nuh), // io regs
             0xff06 => Ok(&mut self.nuh), // timer
             0xfea0..0xff00 => Ok(&mut self.nuh), // not usable
             
@@ -96,12 +96,13 @@ impl MMU {
 
             bootrom: bootrom.map(ROM::new),
             cartridge: ROM::new(cartridge),
-            external_ram: RAM::new(8 * 1024, Box::new(|addr: Addr| addr - 0xa000.into())),
+            external_ram: RAM::new(8 * 1024, Box::new(|addr: Addr| addr - 0xa000.into()), 0),
             work_ram: RAM::new(
                 8 * 1024,
                 Box::new(|addr: Addr| (u16::from(addr) & 0b11_1111_1111_1111).into()),
+                0,
             ),
-            high_ram: RAM::new(0xfe - 0x80 + 1, Box::new(|addr: Addr| addr - 0xff80.into())),
+            high_ram: RAM::new(0xfe - 0x80 + 1, Box::new(|addr: Addr| addr - 0xff80.into()), 0),
             nuh: NotUsableHigh,
             nul: NotUsableLow,
 
@@ -163,12 +164,12 @@ impl MMU {
             // 0x8000..0xa000    => self.ppu.vram.writeu8(addr, value).unwrap(),
 
             DMA               => {
-                println!("start dma");
+                // println!("start dma");
                 let addr = ((value as u16) << 8).into();
                 let mem_reg = self.find_region(addr).unwrap();
                 let slice = mem_reg.as_slice(addr, 0xa0).unwrap().to_owned();
                 self.ppu.dma(&slice);
-                println!("end dma");
+                // println!("end dma");
             }
 
             BANK_REG       => self.boot_disabled = value != 0,
