@@ -4,7 +4,7 @@ use super::busio::{BusIO, SResult};
 use crate::util::Addr;
 
 pub(crate) struct RAM {
-    buffer: Vec<u8>,
+    pub buffer: Vec<u8>,
     map: Box<dyn Fn(Addr) -> Addr>,
 }
 

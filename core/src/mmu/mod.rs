@@ -7,7 +7,7 @@ use busio::{BusIO, SResult};
 use crate::{
     cpu::interrupts::{Interrupts, Interrupt},
     ppu::{
-        lcdc::LCDC, palette::Palette, status::Status, PPU, REG_BG_PALETTE, REG_CURR_SCANLINE, REG_LCDC,
+        lcdc::LCDC, palette::{BgWinPalette, ObjPalette}, status::Status, PPU, REG_BG_PALETTE, REG_CURR_SCANLINE, REG_LCDC,
         REG_SCROLL_X, REG_SCROLL_Y, REG_STAT, REG_OBJ_PALETTE_0, REG_OBJ_PALETTE_1, REG_WIN_X, REG_WIN_Y,
     },
     util::Addr,
@@ -154,9 +154,9 @@ impl MMU {
             REG_SCROLL_Y      => self.ppu.scy = value,
             REG_WIN_X         => self.ppu.wx = value,
             REG_WIN_Y         => self.ppu.wy = value,
-            REG_BG_PALETTE    => self.ppu.bgp = Palette::from(value),
-            REG_OBJ_PALETTE_0 => self.ppu.obp0 = Palette::from(value),
-            REG_OBJ_PALETTE_1 => self.ppu.obp1 = Palette::from(value),
+            REG_BG_PALETTE    => self.ppu.bgp = BgWinPalette::from(value),
+            REG_OBJ_PALETTE_0 => self.ppu.obp0 = ObjPalette::from(value),
+            REG_OBJ_PALETTE_1 => self.ppu.obp1 = ObjPalette::from(value),
 
 
             IER               => self.ier = value.into(),

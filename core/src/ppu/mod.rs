@@ -1,5 +1,6 @@
 mod colour;
 pub(crate) mod lcdc;
+mod oam;
 pub(crate) mod palette;
 mod screen;
 pub(crate) mod status;
@@ -7,10 +8,13 @@ pub(crate) mod status;
 use crate::{mmu::{ram::RAM, busio::BusIO}, util::Addr};
 use colour::Colour;
 use lcdc::LCDC;
-use palette::Palette;
+use oam::{OAM, Sprite, SpriteAttr, ObjPaletteType};  
+use palette::{BgWinPalette, ObjPalette};
 pub use screen::screen_u32;
 use screen::Screen;
 use status::{PpuMode, Status};
+
+use self::lcdc::TileData;
 
 // https://forums.nesdev.org/viewtopic.php?f=20&t=17754&p=225009#p225009
 // http://blog.kevtris.org/blogfiles/Nitty%20Gritty%20Gameboy%20VRAM%20Timing.txt
@@ -50,6 +54,9 @@ const TICKS_ONE_LINE: u64 = TICKS_OAM_SEARCH + TICKS_PIXEL_TRANSFER + TICKS_HBLA
 const TICKS_VBLANK: u64 = VBLANK_LINES as u64 * TICKS_ONE_LINE;
 const TICKS_ONE_FRAME: u64 = SCREEN_HEIGHT_PIXELS as u64 * TICKS_ONE_LINE + TICKS_VBLANK;
 
+const OAM_SIZE: usize = 0xa0;
+const MAX_SPRITES_PER_ROW: usize = 10;
+
 type ColourScreenRow = [Colour; SCREEN_WIDTH_PIXELS as usize];
 type ColourTileRow = [Colour; TILE_WIDTH_PIXELS as usize];
 
@@ -70,14 +77,14 @@ pub struct PPU {
     pub(crate) wy: u8,
     pub(crate) wx: u8,
 
-    pub(crate) bgp: Palette,
-    pub(crate) obp0: Palette,
-    pub(crate) obp1: Palette,
+    pub(crate) bgp: BgWinPalette,
+    pub(crate) obp0: ObjPalette,
+    pub(crate) obp1: ObjPalette,
 
     pub(crate) vblank_interrupt: bool,
 
     pub(crate) vram: RAM,
-    pub(crate) oam: RAM,
+    pub(crate) oam: OAM,
 
 }
 
@@ -104,7 +111,7 @@ impl PPU {
             vblank_interrupt: false,
 
             vram: RAM::new(8 * 1024, Box::new(|addr: Addr| addr - 0x8000.into()), 0xda),
-            oam: RAM::new(0xa0, Box::new(|addr: Addr| addr - 0xfe00.into()), 0),
+            oam: OAM(RAM::new(OAM_SIZE, Box::new(|addr: Addr| addr - 0xfe00.into()), 0)),
         };
         ppu
     }
@@ -136,6 +143,8 @@ impl PPU {
                         self.status.mode = PpuMode::OAMSearch;
                     } else {
                         // println!("{}", self.screen);
+                        println!("{:?}", self.oam.into_iter().collect::<Vec<_>>());
+                        // println!("{:?}", self.lcdc);
                         self.status.mode = PpuMode::VBlank;
                     }
                 }
@@ -157,19 +166,59 @@ impl PPU {
     }
 
     pub(crate) fn dma(&mut self, src: &[u8]) {
-        self.oam.copy_from_slice(src);
+        self.oam.0.copy_from_slice(src);
     }
 
     fn renderscan(&mut self) {
         let py = self.get_curr_scanline();
-        let row_data: [ColourTileRow; SCREEN_WIDTH_TILES as usize] = (0..SCREEN_WIDTH_TILES)
+        let bg_win_data: [ColourTileRow; SCREEN_WIDTH_TILES as usize] = (0..SCREEN_WIDTH_TILES)
             .map(|tx| self.get_bg_tile_row(TILE_WIDTH_PIXELS * tx, py))
             .collect::<Vec<_>>()
             .try_into()
             .unwrap();
+        let bg_win_data: ColourScreenRow = unsafe { std::mem::transmute(bg_win_data) };
 
-        let row_data: ColourScreenRow = unsafe { std::mem::transmute(row_data) };
+        // let row_data : &(dyn Iterator<Item = Colour> + Sized) = if self.lcdc.object_enable {
+            let sprite_data: ColourScreenRow = self.get_sprite_tile_data(py);
+            if 128 <= py && py <= 128+6 {
+                println!("{:?}", sprite_data);
+            }
+            let row_data = sprite_data.into_iter().zip(bg_win_data.into_iter()).map(|(s, bw)| s | bw);
+
+        // } else {
+            // &bg_win_data.into_iter()
+        // };
+
         self.update_row(py, row_data);
+    }
+
+    fn get_sprite_tile_data(&mut self, py: u8) -> ColourScreenRow {
+        let mut row: ColourScreenRow = [Colour::Transparent; SCREEN_WIDTH_PIXELS as usize];
+        for s in self.oam.row(py, self.lcdc.object_size) {
+            let ta = TileData::Low.get_tile_data_addr(s.ti);
+            let ro = 2 * (py % TILE_HEIGHT_PIXELS) as u16; // 2 bytes per row * (spy % 8)
+            let tra = ta + ro.into();
+
+            let lb = self.read_vram(tra);
+            let hb = self.read_vram(tra + 1.into());
+            (0..TILE_WIDTH_PIXELS)
+                .rev()
+                .map(|n| self.get_obj_palette(&s).map(((get_nth_bit(hb, n) as u8) << 1) | get_nth_bit(lb, n) as u8).unwrap())
+                .enumerate()
+                .for_each(|(i, c)| {
+                    if (s.x_pos + i as u8) > 8 && (s.x_pos + i as u8) < (SCREEN_WIDTH_PIXELS + 8) { 
+                        row[s.x_pos as usize + i - 8] = c;
+                    }
+                });
+        };
+        row
+    }
+
+    fn get_obj_palette(&self, s: &Sprite) -> &ObjPalette {
+        match s.attr.palette {
+            ObjPaletteType::OBP0 => &self.obp0,
+            ObjPaletteType::OBP1 => &self.obp1,
+        }
     }
 
     fn get_bg_tile_row(&self, px: u8, py: u8) -> ColourTileRow {
@@ -180,15 +229,15 @@ impl PPU {
 
     fn adjust_viewport_scroll(&self, px: u8, py: u8) -> (u8, u8) {
         // adjusting for viewport offsets
-        let px = px + self.get_scroll_x();
-        let py = py + self.get_scroll_y();
-        (px, py)
+        let spx = px + self.get_scroll_x();
+        let spy = py + self.get_scroll_y();
+        (spx, spy)
     }
 
     fn get_tile_data_addr(&self, spx: u8, spy: u8) -> Addr {
         // get tile number
-        let ty = spy >> 3; // py / 8
-        let tx = spx >> 3; // px / 8
+        let ty = spy >> 3; // spy / 8
+        let tx = spx >> 3; // spx / 8
                            // type conversion for individual variables instead of type conversion at the end - in order to avoid overflow
         let to = (ty as u16) * TILEMAP_WIDTH_TILES + tx as u16; // 32 = Number of tiles in a row = 256(number of pixels per row)/8(number of pixels per tile row)
 
@@ -205,7 +254,7 @@ impl PPU {
         let ta = self.get_tile_data_addr(spx, spy);
 
         // get the address where the row data is stored
-        let ro = 2 * (spy % TILE_HEIGHT_PIXELS) as u16; // 2 bytes per row * (py % 8)
+        let ro = 2 * (spy % TILE_HEIGHT_PIXELS) as u16; // 2 bytes per row * (spy % 8)
         let tra = ta + ro.into();
         tra
     }
@@ -217,7 +266,7 @@ impl PPU {
         (0..TILE_WIDTH_PIXELS)
             .rev()
             .map(|n| {
-                Colour::try_from(((get_nth_bit(hb, n) as u8) << 1) | get_nth_bit(lb, n) as u8)
+                self.bgp.map(((get_nth_bit(hb, n) as u8) << 1) | get_nth_bit(lb, n) as u8)
                     .unwrap()
             })
             .collect::<Vec<Colour>>()
@@ -225,9 +274,9 @@ impl PPU {
             .unwrap()
     }
 
-    fn update_row(&mut self, row: u8, row_data: ColourScreenRow) {
-        for (i, c) in row_data.iter().enumerate() {
-            self.screen.set(row, i as u8, *c);
+    fn update_row<T: Iterator<Item = Colour>>(&mut self, row: u8, row_data: T) {
+        for (i, c) in row_data.enumerate() {
+            self.screen.set(row, i as u8, c);
         }
     }
 
@@ -285,7 +334,7 @@ impl PPU {
     fn incr_curr_scanline(&mut self) {
         self.curr_scanline += 1;
     }
-    fn set_bg_palette(&mut self, palette: Palette) {
+    fn set_bg_palette(&mut self, palette: BgWinPalette) {
         self.bgp = palette;
     }
 }
