@@ -143,7 +143,7 @@ impl PPU {
                         self.status.mode = PpuMode::OAMSearch;
                     } else {
                         // println!("{}", self.screen);
-                        println!("{:?}", self.oam.into_iter().collect::<Vec<_>>());
+                        // println!("{:?}", self.oam.into_iter().collect::<Vec<_>>());
                         // println!("{:?}", self.lcdc);
                         self.status.mode = PpuMode::VBlank;
                     }
@@ -171,23 +171,24 @@ impl PPU {
 
     fn renderscan(&mut self) {
         let py = self.get_curr_scanline();
-        let bg_win_data: [ColourTileRow; SCREEN_WIDTH_TILES as usize] = (0..SCREEN_WIDTH_TILES)
-            .map(|tx| self.get_bg_tile_row(TILE_WIDTH_PIXELS * tx, py))
-            .collect::<Vec<_>>()
-            .try_into()
-            .unwrap();
-        let bg_win_data: ColourScreenRow = unsafe { std::mem::transmute(bg_win_data) };
 
-        // let row_data : &(dyn Iterator<Item = Colour> + Sized) = if self.lcdc.object_enable {
+        let bg_win_data: ColourScreenRow = if self.lcdc.bg_window_enable {
+            let bg_win_data: [ColourTileRow; SCREEN_WIDTH_TILES as usize] = (0..SCREEN_WIDTH_TILES)
+                .map(|tx| self.get_bg_tile_row(TILE_WIDTH_PIXELS * tx, py))
+                .collect::<Vec<_>>()
+                .try_into()
+                .unwrap();
+            unsafe { std::mem::transmute(bg_win_data) }
+        } else {
+            [Colour::White; SCREEN_WIDTH_PIXELS as usize]
+        };
+
+        let row_data: Box<dyn Iterator<Item = Colour>> = if self.lcdc.object_enable {
             let sprite_data: ColourScreenRow = self.get_sprite_tile_data(py);
-            if 128 <= py && py <= 128+6 {
-                println!("{:?}", sprite_data);
-            }
-            let row_data = sprite_data.into_iter().zip(bg_win_data.into_iter()).map(|(s, bw)| s | bw);
-
-        // } else {
-            // &bg_win_data.into_iter()
-        // };
+            Box::from(sprite_data.into_iter().zip(bg_win_data.into_iter()).map(|(s, bw)| s | bw))
+        } else {
+            Box::from(bg_win_data.into_iter())
+        };
 
         self.update_row(py, row_data);
     }
@@ -195,8 +196,15 @@ impl PPU {
     fn get_sprite_tile_data(&mut self, py: u8) -> ColourScreenRow {
         let mut row: ColourScreenRow = [Colour::Transparent; SCREEN_WIDTH_PIXELS as usize];
         for s in self.oam.row(py, self.lcdc.object_size) {
-            let ta = TileData::Low.get_tile_data_addr(s.ti);
-            let ro = 2 * (py % TILE_HEIGHT_PIXELS) as u16; // 2 bytes per row * (spy % 8)
+            let mut distance_from_top_of_sprite = py - (s.y_pos - 16);
+            if s.attr.y_flip {
+                let sprite_height = self.lcdc.object_size as u8;
+                distance_from_top_of_sprite = sprite_height - distance_from_top_of_sprite;
+            }
+            
+            let ta = TileData::Low.get_tile_data_addr(s.ti | (distance_from_top_of_sprite > TILE_HEIGHT_PIXELS) as u8);
+            
+            let ro = 2 * (distance_from_top_of_sprite % TILE_HEIGHT_PIXELS) as u16; // 2 bytes per row * (spy % 8)
             let tra = ta + ro.into();
 
             let lb = self.read_vram(tra);
@@ -206,6 +214,7 @@ impl PPU {
                 .map(|n| self.get_obj_palette(&s).map(((get_nth_bit(hb, n) as u8) << 1) | get_nth_bit(lb, n) as u8).unwrap())
                 .enumerate()
                 .for_each(|(i, c)| {
+                    let i = if s.attr.x_flip { TILE_WIDTH_PIXELS as usize - i } else { i };
                     if (s.x_pos + i as u8) > 8 && (s.x_pos + i as u8) < (SCREEN_WIDTH_PIXELS + 8) { 
                         row[s.x_pos as usize + i - 8] = c;
                     }
@@ -274,9 +283,12 @@ impl PPU {
             .unwrap()
     }
 
-    fn update_row<T: Iterator<Item = Colour>>(&mut self, row: u8, row_data: T) {
-        for (i, c) in row_data.enumerate() {
+    // fn update_row<T: Iterator<Item = Colour>>(&mut self, row: u8, row_data: T) {
+    fn update_row(&mut self, row: u8, row_data: Box<dyn Iterator<Item = Colour>>) {
+        let mut i = 0;
+        for c in row_data {
             self.screen.set(row, i as u8, c);
+            i += 1;
         }
     }
 

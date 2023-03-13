@@ -88,9 +88,10 @@ impl From<bool> for TileData {
 }
 
 #[derive(Debug, Clone, Copy)]
+#[repr(u8)]
 pub(crate) enum ObjectSize {
-    Short, // 8x8
-    Long,  // 8x16
+    Short = 8, // 8x8
+    Long  = 16,  // 8x16
 }
 
 impl From<ObjectSize> for bool {
