@@ -1,91 +1,63 @@
-use crate::{mmu::MMU, util::Addr, DIVIDER_WRITE};
+pub(crate) const REG_DIV: u16 = 0xff04;
+pub(crate) const REG_TIMA: u16 = 0xff05;
+pub(crate) const REG_TMA: u16 = 0xff06;
+pub(crate) const REG_TAC: u16 = 0xff07;
 
-const DIV: Addr = Addr::from(0xff04);
-const TIMA: Addr = Addr::from(0xff05);
-const TMA: Addr = Addr::from(0xff06);
-const TAC: Addr = Addr::from(0xff07);
+// https://pixelbits.16-b.it/GBEDG/timers/
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, Default)]
 pub(crate) struct Timer {
-    divider: DivTimer,
-    counter: Counter,
+    divider: u16,
+    counter: u8,
+    tm: u8,
+    tc: TimerControl,
+    prev_and_res: bool,
+    pub(crate) interrupt: bool,
 }
 
 impl Timer {
-    pub fn new() -> Self {
-        Self {
-            divider: DivTimer::new(),
-            counter: Counter::new(),
-        }
+    pub(crate) fn read_divider(&self) -> u8 {
+        (self.divider >> 8) as u8
     }
 
-    pub fn tick(&mut self, mmu: &mut MMU, cpu_ticks: u16) {
-        self.divider.tick(mmu, cpu_ticks);
-        self.counter.tick(mmu, self.divider.0);
+    pub(crate) fn write_divider(&mut self, _val: u8) {
+        self.divider = 0;
     }
 
-    pub fn write_divider(&mut self) {
-        self.divider.0 = 0;
+    pub(crate) fn read_counter(&self) -> u8 {
+        self.counter
     }
-}
-#[derive(Debug)]
-pub(crate) struct DivTimer(u16);
 
-impl DivTimer {
-    pub fn new() -> Self {
-        Self(0)
+    pub(crate) fn write_counter(&mut self, val: u8) {
+        self.counter = val;
     }
-    // pub fn read(&self) -> u8 {
-    //     (self.0 >> 8) as u8
-    // }
 
-    // pub fn write(&mut self, mmu: &mut MMU, _value: u8) {
-    //     self.0 = 0;
-    //     mmu.writeu8(DIV, 0);
-    // }
-
-    pub fn tick(&mut self, mmu: &mut MMU, cpu_ticks: u16) {
-        unsafe {
-            if DIVIDER_WRITE {
-                self.0 = 0;
-                DIVIDER_WRITE = false;
-            }
-        }
-        let new_tick = self.0.wrapping_add(cpu_ticks);
-        if new_tick as u8 == 0 {
-            mmu.writeu8(DIV, (new_tick >> 8) as u8);
-        }
-        self.0 = new_tick;
+    pub(crate) fn read_modulo(&self) -> u8 {
+        self.tm
     }
-}
 
-#[derive(Debug)]
-pub(crate) struct Counter(bool);
-
-impl Counter {
-    pub fn new() -> Self {
-        Self(false)
+    pub(crate) fn write_modulo(&mut self, val: u8) {
+        self.tm = val;
     }
-    // pub fn read(&self) -> u8 {
-    //     (self.0 >> 8) as u8
-    // }
 
-    // pub fn write(&mut self, mmu: &mut MMU, _value: u8) {
-    //     self.0 = 0;
-    //     mmu.writeu8(DIV, 0);
-    // }
+    pub(crate) fn read_control(&self) -> u8 {
+        self.tc.into()
+    }
 
-    pub fn tick(&mut self, mmu: &mut MMU, div: u16) {
-        // The “Timer Enable” bit (Bit 2) is extracted from the value
-        // in the TAC register and stored for the next step.
-        let tc = mmu.readu8(TAC);
-        let tc = TimerControl::from(tc);
+    pub(crate) fn write_control(&mut self, val: u8) {
+        self.tc = val.into();
+    }
+
+    pub(crate) fn tick(&mut self, cpu_ticks: u16) {
+        // increment divider
+        self.divider += cpu_ticks;
+
         // A bit position of the 16-bit counter is determined based on the lower 2 bits of the TAC register, as seen here:
         // 0b00: Bit 9
         // 0b01: Bit 3
         // 0b10: Bit 5
         // 0b11: Bit 7
-        let bit = match tc.select {
+        let bit = match self.tc.select {
             Select::Zero => 9,
             Select::One => 3,
             Select::Two => 5,
@@ -93,26 +65,34 @@ impl Counter {
         };
         // The bit taken from the DIV counter is ANDed with the Timer Enable bit.
         // The result of this operation will be referred to as the “AND Result”.
-        let new = tc.enable && div & (1 << bit) != 0;
-        if self.0 && !new {
-            let tima = mmu.readu8(TIMA);
-            let (mut new_tima, of) = tima.overflowing_add(1);
-            if of {
-                new_tima = mmu.readu8(TMA);
-            }
-            mmu.writeu8(TIMA, new_tima);
+        let new_and_res = self.tc.enable && (self.divider & (1 << bit) != 0);
+
+        // TIMA register is incremented only when there is a falling edge
+        if self.prev_and_res && !new_and_res {
+            let (new_tima, of) = self.counter.overflowing_add(1);
+            self.counter = if of {
+                // when TIMA overflows, it's set to the value present in TMA
+                // and a timer interrupt is requested.
+                self.interrupt = true;
+                self.tm
+            } else {
+                new_tima
+            };
         }
-        self.0 = new;
+        self.prev_and_res = new_and_res;
     }
 }
 
+#[derive(Debug, Clone, Copy, Default)]
 struct TimerControl {
     enable: bool,
     select: Select,
 }
 
+#[derive(Debug, Clone, Copy, Default)]
 #[repr(u8)]
 enum Select {
+    #[default]
     Zero = 0,
     One = 1,
     Two = 2,

@@ -11,8 +11,6 @@ mod util;
 use crate::{cpu::CPU, mmu::MMU};
 use std::{fs, io::Read, path::Path};
 
-static mut DIVIDER_WRITE: bool = false;
-
 pub struct Machine {
     cpu: CPU,
     mmu: MMU,

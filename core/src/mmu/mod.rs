@@ -10,7 +10,8 @@ use crate::{
         lcdc::LCDC, palette::{BgWinPalette, ObjPalette}, status::Status, PPU, REG_BG_PALETTE, REG_CURR_SCANLINE, REG_LCDC,
         REG_SCROLL_X, REG_SCROLL_Y, REG_STAT, REG_OBJ_PALETTE_0, REG_OBJ_PALETTE_1, REG_WIN_X, REG_WIN_Y,
     },
-    util::Addr,
+    util::Addr, 
+    timer::{Timer, REG_DIV, REG_TAC, REG_TIMA, REG_TMA},
 };
 use not_usable::{NotUsableHigh, NotUsableLow};
 use ram::RAM;
@@ -37,6 +38,7 @@ pub(crate) struct MMU {
     // joypad: u8,
     
     ppu: PPU,
+    timer: Timer,
 }
 
 impl MMU {
@@ -79,7 +81,7 @@ impl MMU {
             0xff01 | 0xff02 => Ok(&mut self.nuh), // serial transfer
             0xff10..=0xff3f => Ok(&mut self.nuh), // audio
             0xff51..=0xff7f => Ok(&mut self.nuh), // io regs
-            0xff06 => Ok(&mut self.nuh), // timer
+            // 0xff06 => Ok(&mut self.nuh), // timer
             0xfea0..0xff00 => Ok(&mut self.nuh), // not usable
             
 
@@ -111,6 +113,7 @@ impl MMU {
             // joypad: 0,
 
             ppu: PPU::new(),
+            timer: Default::default(),
         }
     }
 
@@ -127,6 +130,11 @@ impl MMU {
             REG_WIN_X         => self.ppu.wx,
             REG_WIN_Y         => self.ppu.wy,
             REG_CURR_SCANLINE => self.ppu.curr_scanline,
+
+            REG_DIV           => self.timer.read_divider(),
+            REG_TIMA          => self.timer.read_counter(),
+            REG_TMA           => self.timer.read_modulo(),
+            REG_TAC           => self.timer.read_control(),
             
             BANK_REG          => if self.boot_disabled { 1 } else { 0 },
 
@@ -158,6 +166,10 @@ impl MMU {
             REG_OBJ_PALETTE_0 => self.ppu.obp0 = ObjPalette::from(value),
             REG_OBJ_PALETTE_1 => self.ppu.obp1 = ObjPalette::from(value),
 
+            REG_DIV           => self.timer.write_divider(value),
+            REG_TIMA          => self.timer.write_counter(value),
+            REG_TMA           => self.timer.write_modulo(value),
+            REG_TAC           => self.timer.write_control(value),
 
             IER               => self.ier = value.into(),
             IFR               => self.ifr_set(value),
@@ -182,6 +194,7 @@ impl MMU {
 
     pub(crate) fn tick(&mut self, cpu_ticks: u64) {
         self.ppu.tick(cpu_ticks);
+        self.timer.tick(cpu_ticks as u16);
     }
 
     fn ifr(&self) -> Interrupts {
@@ -189,11 +202,15 @@ impl MMU {
         if self.ppu.vblank_interrupt {
             ifr.set(Interrupt::VBlank);
         }
+        if self.timer.interrupt {
+            ifr.set(Interrupt::Timer);
+        }
         ifr
     }
 
     fn ifr_set(&mut self, value: u8) {
         let ifr: Interrupts = value.into();
         self.ppu.vblank_interrupt = ifr.vblank;
+        self.timer.interrupt = ifr.timer;
     }
 }
