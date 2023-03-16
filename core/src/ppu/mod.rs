@@ -5,7 +5,7 @@ pub(crate) mod palette;
 mod screen;
 pub(crate) mod status;
 
-use crate::{mmu::{ram::RAM, busio::BusIO}, util::Addr};
+use crate::{mmu::{ram::RAM, busio::BusIO}, util::{Addr, get_nth_bit}};
 use colour::Colour;
 use lcdc::LCDC;
 use oam::{OAM, Sprite, SpriteAttr, ObjPaletteType};  
@@ -110,7 +110,7 @@ impl PPU {
 
             vblank_interrupt: false,
 
-            vram: RAM::new(8 * 1024, Box::new(|addr: Addr| addr - 0x8000.into()), 0xda),
+            vram: RAM::new(8 * 1024, Box::new(|addr: Addr| addr - 0x8000.into()), 0),
             oam: OAM(RAM::new(OAM_SIZE, Box::new(|addr: Addr| addr - 0xfe00.into()), 0)),
         };
         ppu
@@ -189,6 +189,8 @@ impl PPU {
         } else {
             Box::from(bg_win_data.into_iter())
         };
+
+        // let row_data = Box::from(bg_win_data.into_iter());
 
         self.update_row(py, row_data);
     }
@@ -348,14 +350,5 @@ impl PPU {
     }
     fn set_bg_palette(&mut self, palette: BgWinPalette) {
         self.bgp = palette;
-    }
-}
-
-fn get_nth_bit(value: u8, n: u8) -> bool {
-    assert!(n < 8);
-    match (value >> n) & 1 {
-        0 => false,
-        1 => true,
-        _ => unreachable!(),
     }
 }

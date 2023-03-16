@@ -6,7 +6,6 @@
 //    2	    Dark gray
 //    3	    Black
 
-use std::ops::{BitAnd, BitOr};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
@@ -58,7 +57,7 @@ impl TryFrom<u8> for Colour {
 }
 
 // favour the left side
-impl BitOr for Colour {
+impl std::ops::BitOr for Colour {
     type Output = Self;
     fn bitor(self, rhs: Self) -> Self::Output {
         match (self, rhs) {
@@ -69,7 +68,7 @@ impl BitOr for Colour {
 }
 
 // // favour the right side
-// impl BitAnd for Colour {
+// impl std::ops::BitAnd for Colour {
 //     type Output = Self;
 //     fn bitand(self, rhs: Self) -> Self::Output {
 //         match (self, rhs) {

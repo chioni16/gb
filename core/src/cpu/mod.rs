@@ -29,36 +29,37 @@ impl CPU {
         }
     }
 
-    pub fn no_boot(&mut self, mmu: &mut MMU) {
-        self.regs.a = 0x11;
-        self.regs.f = 0x80.into();
-        self.regs.b = 0x00;
-        self.regs.c = 0x00;
-        self.regs.d = 0xff;
-        self.regs.e = 0x56;
-        self.regs.h = 0x00;
-        self.regs.l = 0x0d;
-        self.pc = 0x0100.into();
-        self.sp = 0xfffe.into();
+    // pub fn no_boot(&mut self, mmu: &mut MMU) {
+    //     self.regs.a = 0x11;
+    //     self.regs.f = 0x80.into();
+    //     self.regs.b = 0x00;
+    //     self.regs.c = 0x00;
+    //     self.regs.d = 0xff;
+    //     self.regs.e = 0x56;
+    //     self.regs.h = 0x00;
+    //     self.regs.l = 0x0d;
+    //     self.pc = 0x0100.into();
+    //     self.sp = 0xfffe.into();
 
-        // turn off DMG boot rom
-        // mmu.writeu8(0xff50.into(), 1);
+    //     // turn off DMG boot rom
+    //     // mmu.writeu8(0xff50.into(), 1);
+    //     mmu.boot_disabled = true;
+    // }
+
+    pub fn no_boot(&mut self, mmu: &mut MMU) {
+        self.regs.a = 0x01;
+        self.regs.f = 0xb0.into();
+        self.regs.b = 0x00;
+        self.regs.c = 0x13;
+        self.regs.d = 0x00;
+        self.regs.e = 0xd8;
+        self.regs.h = 0x01;
+        self.regs.l = 0x4d;
+        self.pc = 0x0101.into();
+        self.sp = 0xfffe.into();
+        // self.ime = IMEState::Enabled;
         mmu.boot_disabled = true;
     }
-
-    // pub fn no_boot(&mut self) {
-    //     self.regs.a = 0x01;
-    //     self.regs.f = 0xb0.into();
-    //     self.regs.b = 0x00;
-    //     self.regs.c = 0x13;
-    //     self.regs.d = 0x00;
-    //     self.regs.e = 0xd8;
-    //     self.regs.h = 0x01;
-    //     self.regs.l = 0x4d;
-    //     self.pc = 0x0101.into();
-    //     self.sp = 0xfffe.into();
-    //     self.ime = IMEState::Enabled;
-    // }
 
     pub(crate) fn step(&mut self, mmu: &mut MMU) -> u64 {
         if self.handle_ime(mmu) {
@@ -112,6 +113,7 @@ impl CPU {
                     return true;
                 }
             }
+            // IMEState::Intermediate1 => self.ime = IMEState::Enabled,
             IMEState::Intermediate1 => self.ime = IMEState::Intermediate2,
             IMEState::Intermediate2 => self.ime = IMEState::Enabled,
             IMEState::Disabled => {}

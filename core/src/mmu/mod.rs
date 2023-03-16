@@ -11,7 +11,8 @@ use crate::{
         REG_SCROLL_X, REG_SCROLL_Y, REG_STAT, REG_OBJ_PALETTE_0, REG_OBJ_PALETTE_1, REG_WIN_X, REG_WIN_Y,
     },
     util::Addr, 
-    timer::{Timer, REG_DIV, REG_TAC, REG_TIMA, REG_TMA},
+    timer::{Timer, REG_DIV, REG_TAC, REG_TIMA, REG_TMA}, 
+    joypad::{Joypad, REG_JOYPAD},
 };
 use not_usable::{NotUsableHigh, NotUsableLow};
 use ram::RAM;
@@ -22,7 +23,7 @@ const BANK_REG: u16 = 0xff50;
 const IER: u16 = 0xffff;
 const IFR: u16 = 0xff0f;
 
-pub(crate) struct MMU {
+pub struct MMU {
     pub(crate) boot_disabled: bool,
     bootrom: Option<ROM>,
     cartridge: ROM,
@@ -35,10 +36,9 @@ pub(crate) struct MMU {
 
     ier: Interrupts,
 
-    // joypad: u8,
-    
     ppu: PPU,
     timer: Timer,
+    pub joypad: Joypad,
 }
 
 impl MMU {
@@ -53,13 +53,14 @@ impl MMU {
             0xfe00..0xfea0 => Ok(&self.ppu.oam),
             0xff80..0xffff => Ok(&self.high_ram),
             
-            0xff00            => Ok(&self.nuh), // joypad
+            // 0xff00            => Ok(&self.nuh), // joypad
             
             0xff01 | 0xff02 => Ok(&self.nuh), // serial transfer
             0xff10..=0xff3f => Ok(&self.nuh), // audio
             0xff51..=0xff7f => Ok(&self.nuh), // io regs
             0xfea0..0xff00 => Ok(&self.nuh), // not usable
             
+            0xff4f  | 0xff4d       => Ok(&self.nul),
             
             _              => Err(format!("No read region corresponding to address: {:x?}", addr).into())
         }
@@ -76,13 +77,15 @@ impl MMU {
             0xfe00..0xfea0 => Ok(&mut self.ppu.oam),
             0xff80..0xffff => Ok(&mut self.high_ram),
 
-            0xff00            => Ok(&mut self.nuh), // joypad
+            // 0xff00            => Ok(&mut self.nuh), // joypad
 
             0xff01 | 0xff02 => Ok(&mut self.nuh), // serial transfer
             0xff10..=0xff3f => Ok(&mut self.nuh), // audio
             0xff51..=0xff7f => Ok(&mut self.nuh), // io regs
             // 0xff06 => Ok(&mut self.nuh), // timer
             0xfea0..0xff00 => Ok(&mut self.nuh), // not usable
+
+            0xff4f | 0xff4d        => Ok(&mut self.nul),
             
 
 
@@ -108,12 +111,11 @@ impl MMU {
             nuh: NotUsableHigh,
             nul: NotUsableLow,
 
-            ier: { let mut i: Interrupts = Default::default(); i.set(Interrupt::VBlank); i},
-
-            // joypad: 0,
+            ier: Default::default(),
 
             ppu: PPU::new(),
             timer: Default::default(),
+            joypad: Default::default(),
         }
     }
 
@@ -136,6 +138,8 @@ impl MMU {
             REG_TMA           => self.timer.read_modulo(),
             REG_TAC           => self.timer.read_control(),
             
+            REG_JOYPAD        => self.joypad.read(),
+
             BANK_REG          => if self.boot_disabled { 1 } else { 0 },
 
             IER               => self.ier.into(),
@@ -171,6 +175,9 @@ impl MMU {
             REG_TMA           => self.timer.write_modulo(value),
             REG_TAC           => self.timer.write_control(value),
 
+            // REG_JOYPAD        => {println!("joypad write: {:#b}", value);self.joypad.write_reg(value)},
+            REG_JOYPAD        => self.joypad.write_reg(value),
+
             IER               => self.ier = value.into(),
             IFR               => self.ifr_set(value),
             // 0x8000..0xa000    => self.ppu.vram.writeu8(addr, value).unwrap(),
@@ -194,6 +201,10 @@ impl MMU {
 
     pub(crate) fn tick(&mut self, cpu_ticks: u64) {
         self.ppu.tick(cpu_ticks);
+        // eprintln!("{}", cpu_ticks);
+        if cpu_ticks != ((cpu_ticks as u16) as u64) {
+            panic!("timer error")
+        }
         self.timer.tick(cpu_ticks as u16);
     }
 
@@ -205,6 +216,10 @@ impl MMU {
         if self.timer.interrupt {
             ifr.set(Interrupt::Timer);
         }
+        if self.joypad.interrupt {
+            ifr.set(Interrupt::Joypad);
+        }
+        // eprintln!("ifr: {:?}, ier: {:?}", ifr, self.ier);
         ifr
     }
 
@@ -212,5 +227,6 @@ impl MMU {
         let ifr: Interrupts = value.into();
         self.ppu.vblank_interrupt = ifr.vblank;
         self.timer.interrupt = ifr.timer;
+        self.joypad.interrupt = ifr.joypad;
     }
 }

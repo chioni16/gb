@@ -41,3 +41,12 @@ pub(crate) fn pause() {
     // Read a single byte and discard
     let _ = stdin.read(&mut [0u8]).unwrap();
 }
+
+pub(crate) fn get_nth_bit(value: u8, n: u8) -> bool {
+    assert!(n < 8);
+    match (value >> n) & 1 {
+        0 => false,
+        1 => true,
+        _ => unreachable!(),
+    }
+}

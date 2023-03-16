@@ -663,7 +663,6 @@ fn get_addr_from_r16_group2(cpu: &mut CPU, opcode: u8) -> Addr {
         R16G2::BC => cpu.regs.get_bc(),
         R16G2::DE => {
             let v = cpu.regs.get_de();
-            // println!("yolo {:#x}", v);
             v
         }
         R16G2::HLI => {
@@ -688,7 +687,6 @@ fn write_to_r16_group2(cpu: &mut CPU, mmu: &mut MMU, opcode: u8, value: u8) {
 fn read_from_r16_group2(cpu: &mut CPU, mmu: &MMU, opcode: u8) -> u8 {
     let addr = get_addr_from_r16_group2(cpu, opcode);
     let val = mmu.readu8(addr);
-    // println!("yolo2 {:#x}", val);
     val
 }
 

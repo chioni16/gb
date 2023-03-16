@@ -3,6 +3,7 @@
 #![feature(let_chains)]
 
 mod cpu;
+pub mod joypad;
 mod mmu;
 pub mod ppu;
 mod timer;
@@ -13,7 +14,7 @@ use std::{fs, io::Read, path::Path};
 
 pub struct Machine {
     cpu: CPU,
-    mmu: MMU,
+    pub mmu: MMU,
 }
 
 fn file_helper(
