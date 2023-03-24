@@ -1,9 +1,11 @@
 pub(crate) mod busio;
+mod cartridge;
 mod not_usable;
 pub(crate) mod ram;
 mod rom;
 
 use busio::{BusIO, SResult};
+use cartridge::Cartridge;
 use crate::{
     cpu::interrupts::{Interrupts, Interrupt},
     ppu::{
@@ -26,8 +28,8 @@ const IFR: u16 = 0xff0f;
 pub struct MMU {
     pub(crate) boot_disabled: bool,
     bootrom: Option<ROM>,
-    cartridge: ROM,
-    external_ram: RAM,
+    cartridge: Cartridge,
+    // external_ram: RAM,
     work_ram: RAM,
     high_ram: RAM,
 
@@ -47,7 +49,8 @@ impl MMU {
             0x0000..0x0100 if !self.boot_disabled => Ok(self.bootrom.as_ref().unwrap()),
             0x0000..0x8000 => Ok(&self.cartridge),
             0x8000..0xa000 => Ok(&self.ppu.vram),
-            0xa000..0xc000 => Ok(&self.external_ram),
+            // 0xa000..0xc000 => Ok(&self.external_ram),
+            0xa000..0xc000 => Ok(&self.cartridge),
             0xc000..0xe000 => Ok(&self.work_ram),
             0xe000..0xfe00 => Ok(&self.work_ram),
             0xfe00..0xfea0 => Ok(&self.ppu.oam),
@@ -61,6 +64,8 @@ impl MMU {
             0xfea0..0xff00 => Ok(&self.nuh), // not usable
             
             0xff4f  | 0xff4d       => Ok(&self.nul),
+
+            0xff0b => Ok(&self.nuh),
             
             _              => Err(format!("No read region corresponding to address: {:x?}", addr).into())
         }
@@ -71,7 +76,8 @@ impl MMU {
             0x0000..0x0100 if !self.boot_disabled => Ok(self.bootrom.as_mut().unwrap()),
             0x0000..0x8000 => Ok(&mut self.cartridge),
             0x8000..0xa000 => Ok(&mut self.ppu.vram),
-            0xa000..0xc000 => Ok(&mut self.external_ram),
+            // 0xa000..0xc000 => Ok(&mut self.external_ram),
+            0xa000..0xc000 => Ok(&mut self.cartridge),
             0xc000..0xe000 => Ok(&mut self.work_ram),
             0xe000..0xfe00 => Ok(&mut self.work_ram),
             0xfe00..0xfea0 => Ok(&mut self.ppu.oam),
@@ -86,6 +92,8 @@ impl MMU {
             0xfea0..0xff00 => Ok(&mut self.nuh), // not usable
 
             0xff4f | 0xff4d        => Ok(&mut self.nul),
+
+            0xff0b => Ok(&mut self.nuh),
             
 
 
@@ -100,11 +108,11 @@ impl MMU {
             boot_disabled: false, 
 
             bootrom: bootrom.map(ROM::new),
-            cartridge: ROM::new(cartridge),
-            external_ram: RAM::new(8 * 1024, Box::new(|addr: Addr| addr - 0xa000.into()), 0),
+            cartridge: Cartridge::new(cartridge),
+            // external_ram: RAM::new(8 * 1024, Box::new(|addr: Addr| addr - 0xa000.into()), 0),
             work_ram: RAM::new(
                 8 * 1024,
-                Box::new(|addr: Addr| (u16::from(addr) & 0b11_1111_1111_1111).into()),
+                Box::new(|addr: Addr| (u16::from(addr) & 0b1_1111_1111_1111).into()),
                 0,
             ),
             high_ram: RAM::new(0xfe - 0x80 + 1, Box::new(|addr: Addr| addr - 0xff80.into()), 0),
@@ -132,6 +140,9 @@ impl MMU {
             REG_WIN_X         => self.ppu.wx,
             REG_WIN_Y         => self.ppu.wy,
             REG_CURR_SCANLINE => self.ppu.curr_scanline,
+
+            REG_OBJ_PALETTE_0 => self.ppu.obp0.into(),
+            REG_OBJ_PALETTE_1 => self.ppu.obp1.into(),
 
             REG_DIV           => self.timer.read_divider(),
             REG_TIMA          => self.timer.read_counter(),

@@ -17,16 +17,12 @@ pub struct Machine {
     pub mmu: MMU,
 }
 
-fn file_helper(
-    file_path: impl AsRef<Path>,
-    size: usize,
-) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+fn file_helper(file_path: impl AsRef<Path>) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
     let mut file = fs::File::open(file_path.as_ref())?;
     // TODO change this / find a suitable function
     // let mut buf = vec![0u8; 32*1024];
     let mut buf = vec![];
     file.read_to_end(&mut buf)?;
-    buf.resize(size, 0);
     Ok(buf)
 }
 
@@ -35,9 +31,9 @@ impl Machine {
         cartridge: impl AsRef<Path>,
         bootrom: Option<impl AsRef<Path>>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        let buf = file_helper(cartridge, 32 * 1024)?;
+        let buf = file_helper(cartridge)?;
 
-        let bootrom = bootrom.map(|path| file_helper(path, 0x1000)).transpose()?;
+        let bootrom = bootrom.map(|path| file_helper(path)).transpose()?;
         let bp = bootrom.is_some();
         /*
         let logo: [u8; 48] =

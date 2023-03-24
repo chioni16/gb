@@ -523,7 +523,7 @@ pub(super) fn decode(opcode: u16, cpu: &mut CPU, mmu: &mut MMU) -> u64 {
                 8
             }
         }
-        _ => panic!("Unimplemented opcode: {:#x}", opcode),
+        _ => panic!("Unimplemented opcode: {:#x} @ {:#x}", opcode, cpu.pc.0),
     }
 }
 
